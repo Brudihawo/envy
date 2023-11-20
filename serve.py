@@ -82,14 +82,18 @@ This page contains an overview over all present notes.
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f"<li><a href=\"{fpath}\">{fname}</a></li>\n")
+
         file.write("</ul>\n")
         file.write(html_end)
         file.write("<h2>Daily Notes</h2>")
-        for fname in (f for f in files if f.endswith(".md") and "daily" in f):
+
+        file.write("<ul>\n")
+        for fname in reversed(sorted(f for f in files if f.endswith(".md") and "daily" in f)):
             fpath = fname
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f"<li><a href=\"{fpath}\">{fname}</a></li>\n")
+        file.write("</ul>\n")
 
 
     for folder in folders:
