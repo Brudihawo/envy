@@ -77,7 +77,7 @@ This page contains an overview over all present notes.
 <h2>Paper-Notes</h2>
 <ul>
 """)
-        for fname in (f for f in files if f.endswith(".md") and "papers" in f):
+        for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
             fpath = fname
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
