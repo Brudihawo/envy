@@ -5,6 +5,13 @@ import shutil
 import pycmarkgfm
 import re
 import yaml
+import logging
+
+logger = logging.Logger("logger")
+hn = logging.StreamHandler()
+hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+logger.addHandler(hn)
+logger.setLevel(logging.INFO)
 
 link_re = re.compile(r"\((.*)\.md\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
@@ -12,6 +19,9 @@ serve_path = "./web"
 css_file_name = "./github-markdown-dark.css"
 html_start = "<!DOCTYPE html>\n<html>\n"
 html_end = "</body>\n</html>"
+PORT = 6969
+ADDRESS = "localhost"
+
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -35,9 +45,13 @@ def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
             folders.extend(sub_folders)
             pdfs.extend(sub_pdfs)
         else:
-            print(f"Ignoring {ent.path}")
+            logger.info(f"Ignoring {ent.path}")
 
-    return files, pdfs, folders, 
+    return (
+        files,
+        pdfs,
+        folders,
+    )
 
 
 def refresh_files():
@@ -64,7 +78,8 @@ def refresh_files():
 
     shutil.copyfile(css_file_name, os.path.join(serve_path, css_file_name))
     with open(os.path.join(serve_path, "index.html"), "w") as file:
-        file.write(f"""{html_start}
+        file.write(
+            f"""{html_start}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/{css_file_name}">
 {markdown_insert}
@@ -76,25 +91,27 @@ The notes are separated into daily and paper-specific notes.
 This page contains an overview over all present notes.
 <h2>Paper-Notes</h2>
 <ul>
-""")
+"""
+        )
         for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
             fpath = fname
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f"<li><a href=\"{fpath}\">{fname}</a></li>\n")
+            file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
 
         file.write("</ul>\n")
         file.write(html_end)
         file.write("<h2>Daily Notes</h2>")
 
         file.write("<ul>\n")
-        for fname in reversed(sorted(f for f in files if f.endswith(".md") and "daily" in f)):
+        for fname in reversed(
+            sorted(f for f in files if f.endswith(".md") and "daily" in f)
+        ):
             fpath = fname
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f"<li><a href=\"{fpath}\">{fname}</a></li>\n")
+            file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n")
-
 
     for folder in folders:
         fpath = os.path.join(serve_path, folder)
@@ -105,7 +122,7 @@ This page contains an overview over all present notes.
 
     for file in files:
         out_path = os.path.join(serve_path, file.replace(".md", ".html"))
-        print(f"converting {file} -> {out_path}")
+        logger.info(f"converting {file} -> {out_path}")
         with open(file, "r") as f:
             content = f.read()
             match = header_re.match(content)
@@ -113,10 +130,10 @@ This page contains an overview over all present notes.
             if match is not None:
                 header_len = len(match.group(0))
                 match = match.group(1)
-                header = yaml.load(match)
+                header = yaml.load(match, Loader=yaml.CLoader)
                 content = content[header_len:]
-                print(f"found header {header}")
-                pdf_name = os.path.basename(header['pdf'].replace(".pdf", ""))
+                logger.debug(f"found header {header}")
+                pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
                 html += f"""<head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{header['title']}</title>
@@ -137,7 +154,6 @@ This page contains an overview over all present notes.
             content = link_re.sub(r"(/\1.html)", content)
             converted = pycmarkgfm.gfm_to_html(content)
 
-
         with open(out_path, "w") as f:
             f.write(html)
             f.write(converted)
@@ -145,10 +161,10 @@ This page contains an overview over all present notes.
 
 
 def main():
-    print("refreshing files")
+    logger.info("Refreshing Files")
     refresh_files()
-    server = HTTPServer(("localhost", 6969), Handler)
-    print("running at http://localhost:6969")
+    server = HTTPServer((ADDRESS, PORT), Handler)
+    logger.info(f"Running at http://{ADDRESS}:{PORT}")
     server.serve_forever()
 
 
