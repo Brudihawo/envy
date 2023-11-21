@@ -6,6 +6,10 @@ import pycmarkgfm
 import re
 import yaml
 import logging
+import pyinotify
+import subprocess
+import datetime
+
 
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
@@ -13,14 +17,16 @@ hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
 logger.setLevel(logging.INFO)
 
+
 link_re = re.compile(r"\((.*)\.md\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 serve_path = "./web"
-css_file_name = "./github-markdown-dark.css"
+css_file_name = "./assets/github-markdown-dark.css"
 html_start = "<!DOCTYPE html>\n<html>\n"
 html_end = "</body>\n</html>"
 PORT = 6969
 ADDRESS = "localhost"
+APP_NAME = "NoteView"
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -45,7 +51,7 @@ def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
             folders.extend(sub_folders)
             pdfs.extend(sub_pdfs)
         else:
-            logger.info(f"Ignoring {ent.path}")
+            logger.debug(f"Ignoring {ent.path}")
 
     return (
         files,
@@ -83,7 +89,7 @@ def refresh_files():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/{css_file_name}">
 {markdown_insert}
-<title>Collection of my Notes</title>
+<title>{APP_NAME}: Collection of my Notes</title>
 </head>
 <body class="markdown-body">
 <h1>Collection of my Notes</h1>
@@ -122,7 +128,7 @@ This page contains an overview over all present notes.
 
     for file in files:
         out_path = os.path.join(serve_path, file.replace(".md", ".html"))
-        logger.info(f"converting {file} -> {out_path}")
+        logger.debug(f"converting {file} -> {out_path}")
         with open(file, "r") as f:
             content = f.read()
             match = header_re.match(content)
@@ -136,7 +142,7 @@ This page contains an overview over all present notes.
                 pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
                 html += f"""<head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{header['title']}</title>
+<title>{APP_NAME}: {header['title']}</title>
 <link rel="stylesheet" href="/{css_file_name}">
 {markdown_insert}
 </head>
@@ -144,7 +150,9 @@ This page contains an overview over all present notes.
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 """
             else:
+                name = file.replace(".md", "")
                 html += f"""<head>
+<title>{APP_NAME}: {name}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/{css_file_name}">
 {markdown_insert}
@@ -159,11 +167,51 @@ This page contains an overview over all present notes.
             f.write(converted)
             f.write(html_end)
 
+server = HTTPServer((ADDRESS, PORT), Handler)
+
+class FileEventHandler(pyinotify.ProcessEvent):
+    def __init__(self):
+        self.last_time = datetime.datetime.now()
+
+
+    def process_default(self, event):
+        # TODO: refresh only the changed files
+
+        if not (event.pathname.endswith(".md") or event.pathname.endswith(".pdf")):
+            return
+        
+        if datetime.datetime.now() - self.last_time < datetime.timedelta(microseconds=100):
+            return
+
+        logger.info(f"detected change at {event.pathname}. Regenerating...")
+        refresh_files()
+        self.last_time = datetime.datetime.now()
+
+        window = subprocess.run(["xdotool", "search", "--name", "NoteView: "], capture_output=True)
+        if window.returncode == 0:
+            win_id = window.stdout
+            logger.debug(f"refreshing {win_id}")
+            subprocess.call(["xdotool", "key", "--window", win_id, "F5"])
+
+
 
 def main():
     logger.info("Refreshing Files")
     refresh_files()
-    server = HTTPServer((ADDRESS, PORT), Handler)
+
+    wm = pyinotify.WatchManager()
+    mask = pyinotify.IN_DELETE | pyinotify.IN_CLOSE_WRITE
+
+    notifier = pyinotify.ThreadedNotifier(wm, FileEventHandler())
+    notifier.start()
+    watches = ["./daily", "./papers", "./notes.md"]
+    for watch in watches:
+        wdd = wm.add_watch(watch, mask, rec=True)
+        if wdd[watch] > 0:
+            logger.info(f"watching \"{watch}\" for changes...")
+        else:
+            logger.warn(f"Error watching {watch}.")
+
     logger.info(f"Running at http://{ADDRESS}:{PORT}")
     server.serve_forever()
 

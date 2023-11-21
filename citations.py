@@ -18,7 +18,7 @@ def collect_note_files(dir: str) -> list[str]:
 
 
 def main():
-    files: list[str] = collect_note_files("./papers")
+    files: list[str] = collect_note_files("./notes/papers")
     for file in files:
         with open(file, "r") as f:
             text: str = f.read()

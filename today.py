@@ -9,7 +9,7 @@ from calendar import TextCalendar
 
 START_DATE: date = datetime.strptime("01.11.23", "%d.%m.%y").date()
 NEXT_EMPTY: str = "[next](<empty>)"
-DIRPATH: str = "daily"
+DIRPATH: str = "notes/daily"
 
 
 def open_in_editor(fname: str):
