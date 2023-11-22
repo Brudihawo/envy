@@ -15,7 +15,8 @@ hn = logging.StreamHandler()
 hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
 
-link_re = re.compile(r"\((.*)\.md\)")
+link_re = re.compile(r"\(notes/(.*)\.md\)")
+empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 base_path = "./notes/"
 
@@ -27,6 +28,7 @@ html_start = """<!DOCTYPE html>
 <html>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="utf-8">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <script async src="/assets/mathjax/tex-chtml.js" id="MathJax-script"></script>"""
 html_end = "</body>\n</html>"
 markdown_insert = """<style>
@@ -47,6 +49,7 @@ markdown_insert = """<style>
 
 serve_path = "web"
 assets_path = "assets"
+favicon_path = "favicon.ico"
 css_file_name = "github-markdown-dark.css"
 
 
@@ -149,7 +152,9 @@ def convert_file(in_path, out_path, css_file_path):
 </head>
 <body class="markdown-body">
 """
+
         content = link_re.sub(r"(/\1.html)", content)
+        content = empty_re.sub(r"", content)
         content = content.replace(r"\(", r"\\(")
         content = content.replace(r"\)", r"\\)")
         converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8)
@@ -179,6 +184,7 @@ def refresh_files():
 
     # copy css file to assets
     shutil.copyfile(css_file_path, os.path.join(serve_path, css_file_path))
+    shutil.copyfile(favicon_path, os.path.join(serve_path, favicon_path))
     shutil.copytree("./assets/mathjax/es5", os.path.join(serve_path, assets_path, "mathjax"))
 
     for pdf in pdfs:
