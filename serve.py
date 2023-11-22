@@ -46,6 +46,7 @@ markdown_insert = """<style>
 }
 </style>
 """
+logo_d = 32
 
 serve_path = "web"
 assets_path = "assets"
@@ -93,7 +94,7 @@ def generate_index(css_file_path, files):
 <title>{APP_NAME}: Collection of my Notes</title>
 </head>
 <body class="markdown-body">
-<h1>Collection of my Notes</h1>
+<h1><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img>oteView: Collection of my Notes</h1>
 The notes are separated into daily and paper-specific notes.
 This page contains an overview over all present notes.
 <h2>Paper-Notes</h2>
@@ -141,6 +142,7 @@ def convert_file(in_path, out_path, css_file_path):
 {markdown_insert}
 </head>
 <body class="markdown-body">
+<a href="/index.html"><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img></a>
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 """
         else:
@@ -151,13 +153,18 @@ def convert_file(in_path, out_path, css_file_path):
 {markdown_insert}
 </head>
 <body class="markdown-body">
+<a href="/index.html"><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img></a>
 """
 
         content = link_re.sub(r"(/\1.html)", content)
         content = empty_re.sub(r"", content)
         content = content.replace(r"\(", r"\\(")
         content = content.replace(r"\)", r"\\)")
-        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8)
+        content = content.replace(r"\[", r"\\[")
+        content = content.replace(r"\]", r"\\]")
+        content = content.replace(r"\{", r"\\{")
+        content = content.replace(r"\}", r"\\}")
+        converted = pycmarkgfm.markdown_to_html(content, options=pycmarkgfm.options.validate_utf8)
 
         with open(out_path, "w") as f:
             f.write(html)
@@ -222,12 +229,14 @@ class FileEventHandler(pyinotify.ProcessEvent):
         self.last_time = datetime.datetime.now()
 
         window = subprocess.run(
-            ["xdotool", "search", "--name", "NoteView: "], capture_output=True
+            ["xdotool", "search", "--name", "NoteView:"],
+            capture_output=True
         )
         if window.returncode == 0:
-            win_id = window.stdout
-            logger.debug(f"refreshing {win_id}")
-            subprocess.call(["xdotool", "key", "--window", win_id, "F5"])
+            win_ids = window.stdout.decode().splitlines()
+            for wid in win_ids:
+                logger.debug(f"refreshing {wid}")
+                subprocess.call(["xdotool", "key", "--window", wid, "F5"])
 
 
 def main():
