@@ -10,23 +10,44 @@ import pyinotify
 import subprocess
 import datetime
 
-
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
 hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
-logger.setLevel(logging.INFO)
-
 
 link_re = re.compile(r"\((.*)\.md\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
-serve_path = "./web"
-css_file_name = "./assets/github-markdown-dark.css"
-html_start = "<!DOCTYPE html>\n<html>\n"
-html_end = "</body>\n</html>"
-PORT = 6969
-ADDRESS = "localhost"
+base_path = "./notes/"
+
 APP_NAME = "NoteView"
+ADDRESS = "localhost"
+PORT = 6969
+
+html_start = """<!DOCTYPE html>
+<html>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8">
+    <script async src="/assets/mathjax/tex-chtml.js" id="MathJax-script"></script>"""
+html_end = "</body>\n</html>"
+markdown_insert = """<style>
+.markdown-body {
+    box-sizing: border-box;
+    min-width: 200px;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 45px;
+}
+@media (max-width: 767px) {
+    .markdown-body {
+        padding: 15px;
+    }
+}
+</style>
+"""
+
+serve_path = "web"
+assets_path = "assets"
+css_file_name = "github-markdown-dark.css"
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -60,34 +81,11 @@ def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
     )
 
 
-def refresh_files():
-    if os.path.exists(serve_path):
-        shutil.rmtree(serve_path)
-
-    files, pdfs, folders = collect_structure(".")
-    os.mkdir(serve_path)
-    markdown_insert = """<style>
-	.markdown-body {
-		box-sizing: border-box;
-		min-width: 200px;
-		max-width: 980px;
-		margin: 0 auto;
-		padding: 45px;
-	}
-	@media (max-width: 767px) {
-		.markdown-body {
-			padding: 15px;
-		}
-	}
-</style>
-"""
-
-    shutil.copyfile(css_file_name, os.path.join(serve_path, css_file_name))
+def generate_index(css_file_path, files):
     with open(os.path.join(serve_path, "index.html"), "w") as file:
         file.write(
             f"""{html_start}
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/{css_file_name}">
+<link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
 <title>{APP_NAME}: Collection of my Notes</title>
 </head>
@@ -99,8 +97,9 @@ This page contains an overview over all present notes.
 <ul>
 """
         )
+
         for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
-            fpath = fname
+            fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
@@ -113,89 +112,135 @@ This page contains an overview over all present notes.
         for fname in reversed(
             sorted(f for f in files if f.endswith(".md") and "daily" in f)
         ):
-            fpath = fname
+            fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n")
 
-    for folder in folders:
-        fpath = os.path.join(serve_path, folder)
-        os.mkdir(fpath)
 
-    for pdf in pdfs:
-        shutil.copyfile(pdf, os.path.join(serve_path, pdf))
-
-    for file in files:
-        out_path = os.path.join(serve_path, file.replace(".md", ".html"))
-        logger.debug(f"converting {file} -> {out_path}")
-        with open(file, "r") as f:
-            content = f.read()
-            match = header_re.match(content)
-            html = html_start
-            if match is not None:
-                header_len = len(match.group(0))
-                match = match.group(1)
-                header = yaml.load(match, Loader=yaml.CLoader)
-                content = content[header_len:]
-                logger.debug(f"found header {header}")
-                pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
-                html += f"""<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+def convert_file(in_path, out_path, css_file_path):
+    logger.debug(f"converting {in_path} -> {out_path}")
+    with open(in_path, "r") as f:
+        content = f.read()
+        match = header_re.match(content)
+        html = html_start
+        if match is not None:
+            header_len = len(match.group(0))
+            match = match.group(1)
+            header = yaml.load(match, Loader=yaml.CLoader)
+            content = content[header_len:]
+            logger.debug(f"found header {header}")
+            pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
+            html += f"""
 <title>{APP_NAME}: {header['title']}</title>
-<link rel="stylesheet" href="/{css_file_name}">
+<link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
 </head>
 <body class="markdown-body">
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 """
-            else:
-                name = file.replace(".md", "")
-                html += f"""<head>
+        else:
+            name = in_path.replace(".md", "")
+            html += f"""
 <title>{APP_NAME}: {name}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/{css_file_name}">
+<link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
 </head>
 <body class="markdown-body">
 """
-            content = link_re.sub(r"(/\1.html)", content)
-            converted = pycmarkgfm.gfm_to_html(content)
+        content = link_re.sub(r"(/\1.html)", content)
+        content = content.replace(r"\(", r"\\(")
+        content = content.replace(r"\)", r"\\)")
+        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8)
 
         with open(out_path, "w") as f:
             f.write(html)
             f.write(converted)
             f.write(html_end)
 
+
+def refresh_files():
+    css_file_path = os.path.join(assets_path, css_file_name)
+
+    if os.path.exists(serve_path):
+        shutil.rmtree(serve_path)
+
+    files, pdfs, folders = collect_structure(base_path)
+
+    # regenerate all folders
+    os.mkdir(serve_path)
+    os.mkdir(os.path.join(serve_path, assets_path))
+    for folder in folders:
+        fpath = os.path.join(serve_path, folder.replace(base_path, ""))
+        os.mkdir(fpath)
+
+    generate_index(css_file_path, files)
+
+    # copy css file to assets
+    shutil.copyfile(css_file_path, os.path.join(serve_path, css_file_path))
+    shutil.copytree("./assets/mathjax/es5", os.path.join(serve_path, assets_path, "mathjax"))
+
+    for pdf in pdfs:
+        out_path = os.path.join(serve_path, pdf.replace(base_path, ""))
+        shutil.copyfile(pdf, out_path)
+
+    for file in files:
+        out_path = os.path.join(
+            serve_path, file.replace(base_path, "").replace(".md", ".html")
+        )
+        convert_file(file, out_path, css_file_path)
+
+
+
 server = HTTPServer((ADDRESS, PORT), Handler)
+
 
 class FileEventHandler(pyinotify.ProcessEvent):
     def __init__(self):
         self.last_time = datetime.datetime.now()
-
 
     def process_default(self, event):
         # TODO: refresh only the changed files
 
         if not (event.pathname.endswith(".md") or event.pathname.endswith(".pdf")):
             return
-        
-        if datetime.datetime.now() - self.last_time < datetime.timedelta(microseconds=100):
+
+        if datetime.datetime.now() - self.last_time < datetime.timedelta(
+            microseconds=100
+        ):
             return
 
         logger.info(f"detected change at {event.pathname}. Regenerating...")
         refresh_files()
         self.last_time = datetime.datetime.now()
 
-        window = subprocess.run(["xdotool", "search", "--name", "NoteView: "], capture_output=True)
+        window = subprocess.run(
+            ["xdotool", "search", "--name", "NoteView: "], capture_output=True
+        )
         if window.returncode == 0:
             win_id = window.stdout
             logger.debug(f"refreshing {win_id}")
             subprocess.call(["xdotool", "key", "--window", win_id, "F5"])
 
 
-
 def main():
+    try:
+        log_environ = os.environ['LOG_LEVEL']
+    except KeyError:
+        log_environ = None
+    
+    if log_environ is None:
+        logger.setLevel(logging.INFO)
+    else:
+        try:
+            level = logging._nameToLevel[log_environ]
+            logger.setLevel(level)
+        except KeyError:
+            logger.setLevel(logging.INFO)
+            logger.warn(f"Provided invalid log level {log_environ}. Valid levels are {[l for l in logging._nameToLevel.keys()]}")
+
+
     logger.info("Refreshing Files")
     refresh_files()
 
@@ -204,11 +249,11 @@ def main():
 
     notifier = pyinotify.ThreadedNotifier(wm, FileEventHandler())
     notifier.start()
-    watches = ["./daily", "./papers", "./notes.md"]
+    watches = ["./notes"]
     for watch in watches:
         wdd = wm.add_watch(watch, mask, rec=True)
         if wdd[watch] > 0:
-            logger.info(f"watching \"{watch}\" for changes...")
+            logger.info(f'watching "{watch}" for changes...')
         else:
             logger.warn(f"Error watching {watch}.")
 
