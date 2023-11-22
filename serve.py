@@ -15,7 +15,8 @@ hn = logging.StreamHandler()
 hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
 
-link_re = re.compile(r"\(notes/(.*)\.md\)")
+link_re = re.compile(r"\(notes/(.*?)\.md\)")
+pdf_re = re.compile(r"\(notes/(.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 base_path = "./notes/"
@@ -157,6 +158,7 @@ def convert_file(in_path, out_path, css_file_path):
 """
 
         content = link_re.sub(r"(/\1.html)", content)
+        content = pdf_re.sub(r"(/\1.pdf\2)", content)
         content = empty_re.sub(r"", content)
         content = content.replace(r"\(", r"\\(")
         content = content.replace(r"\)", r"\\)")
@@ -164,7 +166,7 @@ def convert_file(in_path, out_path, css_file_path):
         content = content.replace(r"\]", r"\\]")
         content = content.replace(r"\{", r"\\{")
         content = content.replace(r"\}", r"\\}")
-        converted = pycmarkgfm.markdown_to_html(content, options=pycmarkgfm.options.validate_utf8)
+        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8)
 
         with open(out_path, "w") as f:
             f.write(html)
