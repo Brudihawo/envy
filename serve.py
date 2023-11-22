@@ -143,7 +143,7 @@ def convert_file(in_path, out_path, css_file_path):
 {markdown_insert}
 </head>
 <body class="markdown-body">
-<a href="/index.html"><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img></a>
+<a href="/index.html"><img src="/favicon.ico" width="{int(logo_d / 2)}" height="{int(logo_d / 2)}"></img></a>
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 """
         else:
