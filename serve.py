@@ -68,16 +68,14 @@ function filter(list_id, query_id) {
   var ul = document.getElementById(list_id);
   li = ul.getElementsByTagName('li');
 
-  if (filter == "") {
-      return;
-  }
   var a;
   for (let i = 0; i < li.length; ++i) {
     a = li[i].getElementsByTagName('a')[0];
     var val = (a.textContent || a.innerText).toUpperCase();
     var tags = li[i].getAttribute("tags").split(", ");
+    var title = li[i].getAttribute("title").toUpperCase();
 
-    if (val.includes(filter) || matches(tags, filter)) {
+    if (filter == "" || val.includes(filter) || matches(tags, filter) || title.includes(filter)) {
       li[i].style.display = "";
     } else {
       li[i].style.display = "none";
@@ -163,16 +161,19 @@ This page contains an overview over all present notes.
             meta = get_paper_meta(fname)
             if meta is not None:
                 try:
+                    title = meta["title"]
                     tags = ", ".join(meta["tags"])
                 except KeyError:
                     tags = ""
+                    title = ""
             else:
                 tags = ""
+                title = ""
 
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f'<li tags="{tags}"><a href="{fpath}">{fname}</a></li>\n')
+            file.write(f'<li tags="{tags}" title="{title}">{title}</br><a href="{fpath}">{fname}</a></li>\n')
 
         file.write("</ul>\n")
         file.write(html_end)
