@@ -47,6 +47,46 @@ markdown_insert = """<style>
 }
 </style>
 """
+filter_script = """
+<script>
+function matches(tags, filter) {
+  if (filter == 'READ' || filter == 'UNREAD' || filter == 'READING') {
+    return tags.map((tag) => tag.toUpperCase()).includes(filter);
+  }
+
+  for (let i = 0; i < tags.length; i++) {
+    if (tags[i].toUpperCase().includes(filter)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function filter(list_id, query_id) {
+  var input = document.getElementById(query_id);
+  var filter = input.value.toUpperCase();
+  var ul = document.getElementById(list_id);
+  li = ul.getElementsByTagName('li');
+
+  if (filter == "") {
+      return;
+  }
+  var a;
+  for (let i = 0; i < li.length; ++i) {
+    a = li[i].getElementsByTagName('a')[0];
+    var val = (a.textContent || a.innerText).toUpperCase();
+    var tags = li[i].getAttribute("tags").split(", ");
+
+    if (val.includes(filter) || matches(tags, filter)) {
+      li[i].style.display = "";
+    } else {
+      li[i].style.display = "none";
+    }
+  }
+}
+</script>
+"""
+
 logo_d = 32
 
 serve_path = "web"
@@ -86,7 +126,19 @@ def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
     )
 
 
+def get_paper_meta(in_path):
+    with open(in_path, "r") as f:
+        content = f.read()
+        match = header_re.match(content)
+        if match is not None:
+            header = yaml.load(match.group(1), Loader=yaml.CLoader)
+            return header
+
+        return None
+
+
 def generate_index(css_file_path, files):
+    # TODO: generate search window based on tags
     with open(os.path.join(serve_path, "index.html"), "w") as file:
         file.write(
             f"""{html_start}
@@ -98,22 +150,35 @@ def generate_index(css_file_path, files):
 <h1><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img>oteView: Collection of my Notes</h1>
 The notes are separated into daily and paper-specific notes.
 This page contains an overview over all present notes.
-<h2>Paper-Notes</h2>
-<ul>
 """
         )
 
+        file.write(f"""<h2>Paper-Notes</h2>
+<input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
+{filter_script}
+<ul id="papers">
+""")
+
         for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
+            meta = get_paper_meta(fname)
+            if meta is not None:
+                try:
+                    tags = ", ".join(meta["tags"])
+                except KeyError:
+                    tags = ""
+            else:
+                tags = ""
+
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
+            file.write(f'<li tags="{tags}"><a href="{fpath}">{fname}</a></li>\n')
 
         file.write("</ul>\n")
         file.write(html_end)
         file.write("<h2>Daily Notes</h2>")
 
-        file.write("<ul>\n")
+        file.write("<ul id='papers_list'>\n")
         for fname in reversed(
             sorted(f for f in files if f.endswith(".md") and "daily" in f)
         ):
@@ -122,6 +187,17 @@ This page contains an overview over all present notes.
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n")
+
+        file.write("<h2>Other Notes</h2>\n")
+        file.write("<ul>\n")
+        for fname in sorted(f for f in files if f.endswith(".md") and not "papers" in f and not "daily" in f):
+            fpath = fname.replace(base_path, "")
+            fname = os.path.basename(fname).replace(".md", "")
+            fpath = fpath.replace(".md", ".html")
+            file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
+        file.write("</ul>\n")
+
+
 
 
 def convert_file(in_path, out_path, css_file_path):
