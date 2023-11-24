@@ -72,11 +72,11 @@ function filter(list_id, query_id) {
   var a;
   for (let i = 0; i < li.length; ++i) {
     a = li[i].getElementsByTagName('a')[0];
-    var val = (a.textContent || a.innerText).toUpperCase();
     var tags = li[i].getAttribute("tags").split(", ");
     var title = li[i].getAttribute("title").toUpperCase();
+    var authors = li[i].getAttribute("authors").toUpperCase();
 
-    if (filter == "" || val.includes(filter) || matches(tags, filter) || title.includes(filter)) {
+    if (filter == "" || matches(tags, filter) || title.includes(filter) || authors.includes(filter)) {
       li[i].style.display = "";
     } else {
       li[i].style.display = "none";
@@ -92,6 +92,12 @@ serve_path = "web"
 assets_path = "assets"
 favicon_path = "favicon.ico"
 css_file_name = "github-markdown-dark.css"
+
+def strip_value_or_empty(val: str | None) -> str:
+    if val is not None:
+        return val.strip("{}")
+
+    return ""
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -195,22 +201,30 @@ This page contains an overview over all present notes.
                     bibtex = Parser(meta["bibtex"]).parse()
                     if bibtex.is_err():
                         title = ""
+                        authors = ""
+                        year = ""
                     else:
                         assert isinstance(bibtex, Entry)
-                        title = bibtex.fields["title"].strip("{}")
+                        title = strip_value_or_empty(bibtex.get_or_none("title"))
+                        authors = strip_value_or_empty(bibtex.get_or_none("author"))
+                        year = strip_value_or_empty(bibtex.get_or_none("year")) + ": "
 
                     tags = ", ".join(meta["tags"])
                 except KeyError:
                     tags = ""
                     title = ""
+                    authors = ""
+                    year = ""
             else:
                 tags = ""
                 title = ""
+                authors = ""
+                year = ""
 
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f'<li tags="{tags}" title="{title}">{title}</br><a href="{fpath}">{fname}</a></li>\n')
+            file.write(f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n')
 
         file.write("</ul>\n</div>")
         file.write(html_end)
