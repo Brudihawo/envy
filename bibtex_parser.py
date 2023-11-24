@@ -17,6 +17,12 @@ class Entry:
     def is_err(self):
         return False
 
+    def get_or_none(self, key: str) -> str | None:
+        try:
+            return self.fields[key]
+        except KeyError:
+            return None
+
 
 class Parser:
     def __init__(self, input: str):
