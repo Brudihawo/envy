@@ -5,11 +5,17 @@ from dataclasses import dataclass
 class Error:
     msg: str
 
+    def is_err(self):
+        return True
+
 @dataclass
 class Entry:
     tipe: str
     name: str
     fields: dict[str, str]
+
+    def is_err(self):
+        return False
 
 
 class Parser:
@@ -133,8 +139,8 @@ class Parser:
                     return Entry(tipe, name, data)
             else:
                 self.skip_whitespace()
-                print(self.get_context())
                 if self.peek() == '}':
                     return Entry(tipe, name, data)
 
         return Error(f"Unterminated entry. Context: {self.get_context()}")
+

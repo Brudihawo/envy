@@ -9,6 +9,7 @@ import logging
 import pyinotify
 import subprocess
 import datetime
+from bibtex_parser import Parser, Entry
 
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
@@ -136,12 +137,41 @@ def get_paper_meta(in_path):
 
 
 def generate_index(css_file_path, files):
+    col_gap = 20
+    cols = 5
     # TODO: generate search window based on tags
     with open(os.path.join(serve_path, "index.html"), "w") as file:
         file.write(
             f"""{html_start}
 <link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
+<style>
+.mcol_ul {{
+  counter-reset: section;
+  -moz-column-count: {cols};
+  -moz-column-gap: {col_gap}px;
+  -webkit-column-count: {cols};
+  -webkit-column-count: {col_gap}px;
+  column-count: {cols};
+  column-gap: {col_gap}px;
+}}
+
+.mcol_li {{
+  padding-left: 0px;
+  position: relative;
+}}
+
+.mcol_li:before {{
+  couner-increment: section;
+  counter: counter(section) ".";
+  margin: 0 0 0 -34px;
+  text-align: right;
+  width: 2em;
+  display: inline-block;
+  position: absolute;
+  height: 100%;
+}}
+</style>
 <title>{APP_NAME}: Collection of my Notes</title>
 </head>
 <body class="markdown-body">
@@ -154,6 +184,7 @@ This page contains an overview over all present notes.
         file.write(f"""<h2>Paper-Notes</h2>
 <input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
 {filter_script}
+<div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
 <ul id="papers">
 """)
 
@@ -161,7 +192,13 @@ This page contains an overview over all present notes.
             meta = get_paper_meta(fname)
             if meta is not None:
                 try:
-                    title = meta["title"]
+                    bibtex = Parser(meta["bibtex"]).parse()
+                    if bibtex.is_err():
+                        title = ""
+                    else:
+                        assert isinstance(bibtex, Entry)
+                        title = bibtex.fields["title"].strip("{}")
+
                     tags = ", ".join(meta["tags"])
                 except KeyError:
                     tags = ""
@@ -175,28 +212,32 @@ This page contains an overview over all present notes.
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li tags="{tags}" title="{title}">{title}</br><a href="{fpath}">{fname}</a></li>\n')
 
-        file.write("</ul>\n")
+        file.write("</ul>\n</div>")
         file.write(html_end)
-        file.write("<h2>Daily Notes</h2>")
+        file.write("""<h2>Daily Notes</h2>
+<div style="height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;">
+""")
 
-        file.write("<ul id='papers_list'>\n")
+        file.write("<ul class='mcol_ul' id='papers_list'>\n")
         for fname in reversed(
             sorted(f for f in files if f.endswith(".md") and "daily" in f)
         ):
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
-        file.write("</ul>\n")
+            file.write(f'<li class="mcol_li"><a href="{fpath}">{fname}</a></li>\n')
+        file.write("</ul>\n</div>")
 
-        file.write("<h2>Other Notes</h2>\n")
+        file.write("""<h2>Other Notes</h2>
+<div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
+""")
         file.write("<ul>\n")
         for fname in sorted(f for f in files if f.endswith(".md") and not "papers" in f and not "daily" in f):
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
-        file.write("</ul>\n")
+        file.write("</ul>\n</div>")
 
 
 
@@ -243,7 +284,7 @@ def convert_file(in_path, out_path, css_file_path):
         content = content.replace(r"\]", r"\\]")
         content = content.replace(r"\{", r"\\{")
         content = content.replace(r"\}", r"\\}")
-        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8)
+        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe)
 
         with open(out_path, "w") as f:
             f.write(html)
