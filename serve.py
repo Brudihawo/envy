@@ -266,17 +266,28 @@ def convert_file(in_path, out_path, css_file_path):
             header_len = len(match.group(0))
             match = match.group(1)
             header = yaml.load(match, Loader=yaml.CLoader)
+            bibtex = Parser(header["bibtex"]).parse()
+            if bibtex.is_err():
+                title = ""
+                authors = ""
+                year = ""
+            else:
+                assert isinstance(bibtex, Entry)
+                title = strip_value_or_empty(bibtex.get_or_none("title"))
+                authors = strip_value_or_empty(bibtex.get_or_none("author"))
+                year = strip_value_or_empty(bibtex.get_or_none("year")) + ": "
             content = content[header_len:]
             logger.debug(f"found header {header}")
             pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
             html += f"""
-<title>{APP_NAME}: {header['title']}</title>
+<title>{APP_NAME}: {title}</title>
 <link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
 </head>
 <body class="markdown-body">
 <a href="/index.html"><img src="/favicon.ico" width="{int(logo_d / 2)}" height="{int(logo_d / 2)}"></img></a>
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
+<p>{year}<em>{authors}</em></p>
 """
         else:
             name = in_path.replace(".md", "")
