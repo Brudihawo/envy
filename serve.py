@@ -354,7 +354,7 @@ def convert_file(in_path, out_path, css_file_path):
             f.write(html_end)
 
 
-def refresh_files(serve_dir, assets_dir, root_dir):
+def refresh_files(serve_dir, root_dir):
     css_file_path = os.path.join(assets_dir_name, css_file_name)
 
     if os.path.exists(serve_dir):
@@ -408,7 +408,7 @@ class FileEventHandler(pyinotify.ProcessEvent):
 
         logger.info(f"detected change at {event.pathname}. Regenerating...")
         assets_path = os.path.join(self.cfg.serve_path, assets_dir_name)
-        refresh_files(self.cfg.serve_path, assets_path, self.cfg.root_dir)
+        refresh_files(self.cfg.serve_path, self.cfg.root_dir)
         self.last_time = datetime.datetime.now()
 
         window = subprocess.run(
@@ -486,7 +486,7 @@ def main():
             shutil.copyfile(favicon_orig_path, favicon_dst_path)
 
     logger.info("Refreshing Files")
-    refresh_files(cfg.serve_path, assets_path, cfg.root_dir)
+    refresh_files(cfg.serve_path, cfg.root_dir)
 
     wm = pyinotify.WatchManager()
     mask = pyinotify.IN_DELETE | pyinotify.IN_CLOSE_WRITE
