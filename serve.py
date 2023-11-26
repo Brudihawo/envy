@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
 import shutil
@@ -9,7 +9,12 @@ import logging
 import pyinotify
 import subprocess
 import datetime
+import argparse
+import json
+import urllib.request
+
 from bibtex_parser import Parser, Entry
+from config import get_config, Config
 
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
@@ -21,11 +26,11 @@ pdf_re = re.compile(r"\(notes/(.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 base_path = "./notes/"
-mathjax_path = "./assets/mathjax/es5"
 
 APP_NAME = "NoteView"
 ADDRESS = "localhost"
 PORT = 6969
+
 
 html_start = """<!DOCTYPE html>
 <html>
@@ -89,21 +94,67 @@ function filter(list_id, query_id) {
 
 logo_d = 32
 
-serve_path = "web"
-assets_path = "assets"
-favicon_path = "favicon.ico"
+assets_dir_name = "assets"
+favicon_file_name = "favicon.ico"
 css_file_name = "github-markdown-dark.css"
+mathjax_assets_path = "./assets/mathjax/es5"
+
+
+def config_help():
+    print(
+        """Configuration file help:
+The configuration file is a json file. Default config path is $HOME/.envy/config.json.
+If no config file is specified. This is the path that will be used. If no file exists
+at the default or given config file path, these default values will be used.
+
+In the config file, values may be omitted. These will be set to the default values.
+
+If you want an example default config, use the '-d' flag instead.
+
+Default Config:
+    # the directory where note files are placed
+    "root_dir": "$HOME/notes",  
+
+    # subdirectory name in root_dir for notes specific to papers
+    "papers_dirname": "papers",
+
+    # subdirectory name in root_dir for daily notes
+    "daily_dirname": "daily",
+
+    # path used as serve path for http server
+    "serve_path": "$HOME/.envy/web"
+"""
+    )
+
+
+def copy_locals(cfg: Config):
+    pass
+
+def download_assets(cfg: Config):
+    assets_path = os.path.join(cfg.serve_path, assets_dir_name)
+
+    mathjax_path = os.path.join(assets_path, "mathjax")
+    subprocess.call(
+        f"git clone https://github.com/mathjax/MathJax.git {mathjax_path} --depth=1".split()
+    )
+
+    markdown_css_url = "https://raw.githubusercontent.com/sindresorhus/github-markdown-css/main/github-markdown-dark.css"
+    with urllib.request.urlopen(markdown_css_url) as f:
+        markdown_css = f.read().decode("utf-8")
+
+    css_file_path = os.path.join(assets_path, css_file_name)
+
+    if not os.path.exists(assets_path):
+        os.makedirs(assets_path)
+    with open(css_file_path, "w") as file:
+        file.write(markdown_css)
+
 
 def strip_value_or_empty(val: str | None) -> str:
     if val is not None:
         return val.strip("{}")
 
     return ""
-
-
-class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=serve_path, **kwargs)
 
 
 def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
@@ -143,7 +194,7 @@ def get_paper_meta(in_path):
         return None
 
 
-def generate_index(css_file_path, files):
+def generate_index(serve_path: str, css_file_path: str, files: list[str]):
     col_gap = 20
     cols = 5
     # TODO: generate search window based on tags
@@ -188,12 +239,14 @@ This page contains an overview over all present notes.
 """
         )
 
-        file.write(f"""<h2>Paper-Notes</h2>
+        file.write(
+            f"""<h2>Paper-Notes</h2>
 <input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
 {filter_script}
 <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
 <ul id="papers">
-""")
+"""
+        )
 
         for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
             meta = get_paper_meta(fname)
@@ -225,13 +278,17 @@ This page contains an overview over all present notes.
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
-            file.write(f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n')
+            file.write(
+                f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
+            )
 
         file.write("</ul>\n</div>")
         file.write(html_end)
-        file.write("""<h2>Daily Notes</h2>
+        file.write(
+            """<h2>Daily Notes</h2>
 <div style="height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;">
-""")
+"""
+        )
 
         file.write("<ul class='mcol_ul' id='papers_list'>\n")
         for fname in reversed(
@@ -243,18 +300,22 @@ This page contains an overview over all present notes.
             file.write(f'<li class="mcol_li"><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n</div>")
 
-        file.write("""<h2>Other Notes</h2>
+        file.write(
+            """<h2>Other Notes</h2>
 <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
-""")
+"""
+        )
         file.write("<ul>\n")
-        for fname in sorted(f for f in files if f.endswith(".md") and not "papers" in f and not "daily" in f):
+        for fname in sorted(
+            f
+            for f in files
+            if f.endswith(".md") and not "papers" in f and not "daily" in f
+        ):
             fpath = fname.replace(base_path, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n</div>")
-
-
 
 
 def convert_file(in_path, out_path, css_file_path):
@@ -310,7 +371,10 @@ def convert_file(in_path, out_path, css_file_path):
         content = content.replace(r"\]", r"\\]")
         content = content.replace(r"\{", r"\\{")
         content = content.replace(r"\}", r"\\}")
-        converted = pycmarkgfm.gfm_to_html(content, options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe)
+        converted = pycmarkgfm.gfm_to_html(
+            content,
+            options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe,
+        )
 
         with open(out_path, "w") as f:
             f.write(html)
@@ -318,46 +382,46 @@ def convert_file(in_path, out_path, css_file_path):
             f.write(html_end)
 
 
-def refresh_files():
-    css_file_path = os.path.join(assets_path, css_file_name)
+def refresh_files(serve_dir, assets_dir, root_dir):
+    css_file_path = os.path.join(assets_dir, css_file_name)
 
-    if os.path.exists(serve_path):
-        shutil.rmtree(serve_path)
+    if os.path.exists(serve_dir):
+        for elem in os.scandir(serve_dir):
+            if elem.name == "assets":
+                pass
+            else:
+                if elem.is_dir():
+                    shutil.rmtree(elem.path)
+                else:
+                    os.remove(elem.path)
+    else:
+        os.mkdir(serve_dir)
 
-    files, pdfs, folders = collect_structure(base_path)
+    files, pdfs, folders = collect_structure(root_dir)
 
     # regenerate all folders
-    os.mkdir(serve_path)
-    os.mkdir(os.path.join(serve_path, assets_path))
     for folder in folders:
-        fpath = os.path.join(serve_path, folder.replace(base_path, ""))
+        fpath = os.path.join(serve_dir, folder.replace(root_dir, ""))
         os.mkdir(fpath)
 
-    generate_index(css_file_path, files)
+    generate_index(serve_dir, css_file_path, files)
 
-    # copy css file to assets
-    shutil.copyfile(css_file_path, os.path.join(serve_path, css_file_path))
-    shutil.copyfile(favicon_path, os.path.join(serve_path, favicon_path))
-    shutil.copytree(mathjax_path, os.path.join(serve_path, assets_path, "mathjax"))
-
+    # copy css file to web/assets directory
     for pdf in pdfs:
-        out_path = os.path.join(serve_path, pdf.replace(base_path, ""))
+        out_path = os.path.join(serve_dir, pdf.replace(root_dir, ""))
         shutil.copyfile(pdf, out_path)
 
     for file in files:
         out_path = os.path.join(
-            serve_path, file.replace(base_path, "").replace(".md", ".html")
+            serve_dir, file.replace(root_dir, "").replace(".md", ".html")
         )
         convert_file(file, out_path, css_file_path)
 
 
-
-server = HTTPServer((ADDRESS, PORT), Handler)
-
-
 class FileEventHandler(pyinotify.ProcessEvent):
-    def __init__(self):
+    def __init__(self, cfg: Config):
         self.last_time = datetime.datetime.now()
+        self.cfg = cfg
 
     def process_default(self, event):
         # TODO: refresh only the changed files
@@ -371,12 +435,11 @@ class FileEventHandler(pyinotify.ProcessEvent):
             return
 
         logger.info(f"detected change at {event.pathname}. Regenerating...")
-        refresh_files()
+        refresh_files(self.cfg.serve_path, self.cfg.assets_path, self.cfg.root_dir)
         self.last_time = datetime.datetime.now()
 
         window = subprocess.run(
-            ["xdotool", "search", "--name", "NoteView:"],
-            capture_output=True
+            ["xdotool", "search", "--name", "NoteView:"], capture_output=True
         )
         if window.returncode == 0:
             win_ids = window.stdout.decode().splitlines()
@@ -386,31 +449,75 @@ class FileEventHandler(pyinotify.ProcessEvent):
 
 
 def main():
-    try:
-        log_environ = os.environ['LOG_LEVEL']
-    except KeyError:
-        log_environ = None
-    
-    if log_environ is None:
-        logger.setLevel(logging.INFO)
-    else:
-        try:
-            level = logging._nameToLevel[log_environ]
-            logger.setLevel(level)
-        except KeyError:
-            logger.setLevel(logging.INFO)
-            logger.warn(f"Provided invalid log level {log_environ}. Valid levels are {[l for l in logging._nameToLevel.keys()]}")
+    parser = argparse.ArgumentParser(
+        prog="envy.serve",
+        description="""Serve a collection of markdown files in the browser""",
+    )
+    parser.add_argument(
+        "-u", "--use-config", help="Path to configuration file", type=str, default=None
+    )
+    parser.add_argument(
+        "-c", "--config-help", help="Show config file help", action="store_true"
+    )
+    parser.add_argument(
+        "-d", "--default-config", help="Print the default config", action="store_true"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        choices=[l for l in logging._nameToLevel.keys()],
+        default=logging._levelToName[logging.INFO],
+    )
+    parser.add_argument("-r", "--reload-assets", action="store_true")
+    args = parser.parse_args()
 
+    logger.setLevel(args.verbosity)
+
+    if args.config_help:
+        config_help()
+        exit(0)
+    elif args.default_config:
+        print(json.dumps(Config.DEFAULT, indent=4))
+        exit(0)
+
+    if args.use_config is not None:
+        logger.debug(f"Reading config from {args.use_config}")
+    else:
+        logger.debug("Reading default config")
+    cfg = get_config(fpath=args.use_config)
+
+    if not os.path.exists(cfg.root_dir):
+        print(f"""Note directory {cfg.root_dir} does not exist. Exiting...""")
+        exit(1)
+
+    if not os.path.exists(cfg.serve_path):
+        os.makedirs(cfg.serve_path)
+
+    this_dir = os.path.abspath(os.path.dirname(__file__))
+    favicon_orig_path = os.path.join(this_dir, assets_dir_name, favicon_file_name)
+    favicon_dst_path = os.path.join(cfg.serve_path, assets_dir_name, favicon_file_name)
+    assets_path = os.path.join(cfg.serve_path, assets_dir_name)
+
+    if not os.path.exists(assets_path):
+        os.makedirs(assets_path)
+        download_assets(cfg)
+        shutil.copyfile(favicon_orig_path, favicon_dst_path)
+    else:
+        if args.reload_assets:
+            shutil.rmtree(assets_path)
+            os.makedirs(assets_path)
+            download_assets(cfg)
+            shutil.copyfile(favicon_orig_path, favicon_dst_path)
 
     logger.info("Refreshing Files")
-    refresh_files()
+    refresh_files(cfg.serve_path, assets_path, cfg.root_dir)
 
     wm = pyinotify.WatchManager()
     mask = pyinotify.IN_DELETE | pyinotify.IN_CLOSE_WRITE
 
-    notifier = pyinotify.ThreadedNotifier(wm, FileEventHandler())
+    notifier = pyinotify.ThreadedNotifier(wm, FileEventHandler(cfg))
     notifier.start()
-    watches = ["./notes"]
+    watches = [cfg.root_dir]
     for watch in watches:
         wdd = wm.add_watch(watch, mask, rec=True)
         if wdd[watch] > 0:
@@ -419,6 +526,13 @@ def main():
             logger.warn(f"Error watching {watch}.")
 
     logger.info(f"Running at http://{ADDRESS}:{PORT}")
+
+    class Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=cfg.serve_path, **kwargs)
+
+    server = HTTPServer((ADDRESS, PORT), Handler)
+
     server.serve_forever()
 
 
