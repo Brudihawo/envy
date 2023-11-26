@@ -36,7 +36,7 @@ html_start = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="utf-8">
     <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
-    <script async src="/assets/mathjax/tex-chtml.js" id="MathJax-script"></script>"""
+    <script async src="/assets/mathjax/es5/tex-chtml.js" id="MathJax-script"></script>"""
 html_end = "</body>\n</html>"
 markdown_insert = """<style>
 .markdown-body {
