@@ -14,7 +14,7 @@ import json
 import urllib.request
 
 from bibtex_parser import Parser, Entry
-from config import get_config, Config
+from config import get_config, Config, print_config_help
 
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
@@ -25,7 +25,6 @@ link_re = re.compile(r"\(notes/(.*?)\.md\)")
 pdf_re = re.compile(r"\(notes/(.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
-base_path = "./notes/"
 
 APP_NAME = "NoteView"
 ADDRESS = "localhost"
@@ -36,7 +35,7 @@ html_start = """<!DOCTYPE html>
 <html>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="utf-8">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
     <script async src="/assets/mathjax/tex-chtml.js" id="MathJax-script"></script>"""
 html_end = "</body>\n</html>"
 markdown_insert = """<style>
@@ -99,32 +98,6 @@ favicon_file_name = "favicon.ico"
 css_file_name = "github-markdown-dark.css"
 mathjax_assets_path = "./assets/mathjax/es5"
 
-
-def config_help():
-    print(
-        """Configuration file help:
-The configuration file is a json file. Default config path is $HOME/.envy/config.json.
-If no config file is specified. This is the path that will be used. If no file exists
-at the default or given config file path, these default values will be used.
-
-In the config file, values may be omitted. These will be set to the default values.
-
-If you want an example default config, use the '-d' flag instead.
-
-Default Config:
-    # the directory where note files are placed
-    "root_dir": "$HOME/notes",  
-
-    # subdirectory name in root_dir for notes specific to papers
-    "papers_dirname": "papers",
-
-    # subdirectory name in root_dir for daily notes
-    "daily_dirname": "daily",
-
-    # path used as serve path for http server
-    "serve_path": "$HOME/.envy/web"
-"""
-    )
 
 
 def copy_locals(cfg: Config):
@@ -194,10 +167,9 @@ def get_paper_meta(in_path):
         return None
 
 
-def generate_index(serve_path: str, css_file_path: str, files: list[str]):
+def generate_index(serve_path: str, css_file_path: str, files: list[str], root_dir):
     col_gap = 20
     cols = 5
-    # TODO: generate search window based on tags
     with open(os.path.join(serve_path, "index.html"), "w") as file:
         file.write(
             f"""{html_start}
@@ -233,7 +205,7 @@ def generate_index(serve_path: str, css_file_path: str, files: list[str]):
 <title>{APP_NAME}: Collection of my Notes</title>
 </head>
 <body class="markdown-body">
-<h1><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img>oteView: Collection of my Notes</h1>
+<h1><img src="/assets/favicon.ico" width="{logo_d}" height="{logo_d}"></img>oteView: Collection of my Notes</h1>
 The notes are separated into daily and paper-specific notes.
 This page contains an overview over all present notes.
 """
@@ -275,7 +247,7 @@ This page contains an overview over all present notes.
                 authors = ""
                 year = ""
 
-            fpath = fname.replace(base_path, "")
+            fpath = fname.replace(root_dir, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(
@@ -294,7 +266,7 @@ This page contains an overview over all present notes.
         for fname in reversed(
             sorted(f for f in files if f.endswith(".md") and "daily" in f)
         ):
-            fpath = fname.replace(base_path, "")
+            fpath = fname.replace(root_dir, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li class="mcol_li"><a href="{fpath}">{fname}</a></li>\n')
@@ -311,7 +283,7 @@ This page contains an overview over all present notes.
             for f in files
             if f.endswith(".md") and not "papers" in f and not "daily" in f
         ):
-            fpath = fname.replace(base_path, "")
+            fpath = fname.replace(root_dir, "")
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
@@ -347,7 +319,7 @@ def convert_file(in_path, out_path, css_file_path):
 {markdown_insert}
 </head>
 <body class="markdown-body">
-<a href="/index.html"><img src="/favicon.ico" width="{int(logo_d / 2)}" height="{int(logo_d / 2)}"></img></a>
+<a href="/index.html"><img src="/{assets_dir_name}/{favicon_file_name}" width="{int(logo_d / 2)}" height="{int(logo_d / 2)}"></img></a>
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 <p>{year}<em>{authors}</em></p>
 """
@@ -359,7 +331,7 @@ def convert_file(in_path, out_path, css_file_path):
 {markdown_insert}
 </head>
 <body class="markdown-body">
-<a href="/index.html"><img src="/favicon.ico" width="{logo_d}" height="{logo_d}"></img></a>
+<a href="/index.html"><img src="/{assets_dir_name}/{favicon_file_name}" width="{logo_d}" height="{logo_d}"></img></a>
 """
 
         content = link_re.sub(r"(/\1.html)", content)
@@ -383,7 +355,7 @@ def convert_file(in_path, out_path, css_file_path):
 
 
 def refresh_files(serve_dir, assets_dir, root_dir):
-    css_file_path = os.path.join(assets_dir, css_file_name)
+    css_file_path = os.path.join(assets_dir_name, css_file_name)
 
     if os.path.exists(serve_dir):
         for elem in os.scandir(serve_dir):
@@ -401,19 +373,19 @@ def refresh_files(serve_dir, assets_dir, root_dir):
 
     # regenerate all folders
     for folder in folders:
-        fpath = os.path.join(serve_dir, folder.replace(root_dir, ""))
+        fpath = os.path.join(serve_dir, folder.replace(root_dir, "").strip("/"))
         os.mkdir(fpath)
 
-    generate_index(serve_dir, css_file_path, files)
+    generate_index(serve_dir, css_file_path, files, root_dir)
 
     # copy css file to web/assets directory
     for pdf in pdfs:
-        out_path = os.path.join(serve_dir, pdf.replace(root_dir, ""))
+        out_path = os.path.join(serve_dir, pdf.replace(root_dir, "").strip("/"))
         shutil.copyfile(pdf, out_path)
 
     for file in files:
         out_path = os.path.join(
-            serve_dir, file.replace(root_dir, "").replace(".md", ".html")
+            serve_dir, file.replace(root_dir, "").strip("/").replace(".md", ".html")
         )
         convert_file(file, out_path, css_file_path)
 
@@ -435,7 +407,8 @@ class FileEventHandler(pyinotify.ProcessEvent):
             return
 
         logger.info(f"detected change at {event.pathname}. Regenerating...")
-        refresh_files(self.cfg.serve_path, self.cfg.assets_path, self.cfg.root_dir)
+        assets_path = os.path.join(self.cfg.serve_path, assets_dir_name)
+        refresh_files(self.cfg.serve_path, assets_path, self.cfg.root_dir)
         self.last_time = datetime.datetime.now()
 
         window = subprocess.run(
@@ -448,7 +421,7 @@ class FileEventHandler(pyinotify.ProcessEvent):
                 subprocess.call(["xdotool", "key", "--window", wid, "F5"])
 
 
-def main():
+def get_args():
     parser = argparse.ArgumentParser(
         prog="envy.serve",
         description="""Serve a collection of markdown files in the browser""",
@@ -469,12 +442,15 @@ def main():
         default=logging._levelToName[logging.INFO],
     )
     parser.add_argument("-r", "--reload-assets", action="store_true")
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def main():
+    args = get_args()
     logger.setLevel(args.verbosity)
 
     if args.config_help:
-        config_help()
+        print_config_help()
         exit(0)
     elif args.default_config:
         print(json.dumps(Config.DEFAULT, indent=4))
@@ -531,8 +507,8 @@ def main():
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=cfg.serve_path, **kwargs)
 
+    logger.debug(f"Serving directory {cfg.serve_path}")
     server = HTTPServer((ADDRESS, PORT), Handler)
-
     server.serve_forever()
 
 

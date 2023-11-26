@@ -2,6 +2,9 @@
 import os
 import re
 import yaml
+import argparse
+
+from config import get_config
 
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 first_line_re = re.compile(r"@(.+?){(.+?), ")
@@ -20,8 +23,26 @@ def collect_note_files(dir: str) -> list[str]:
     return files
 
 
+def get_args():
+    parser = argparse.ArgumentParser(
+        prog="envy.citations",
+        description="""Serve a collection of markdown files in the browser""",
+    )
+    parser.add_argument(
+        "-u", "--use-config", help="Path to configuration file", type=str, default=None
+    )
+    parser.add_argument(
+        "-c", "--config-help", help="Show config file help", action="store_true"
+    )
+    return parser.parse_args()
+
+
+
 def main():
-    files: list[str] = collect_note_files("./notes/papers")
+    args = get_args()
+    cfg = get_config(args.use_config)
+
+    files: list[str] = collect_note_files(cfg.root_dir)
     for file in files:
         with open(file, "r") as f:
             text: str = f.read()

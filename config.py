@@ -56,3 +56,30 @@ def get_config(fpath: str | None = None) -> Config:
     else:
         return Config.default()
 
+
+def print_config_help():
+    print(
+        """Configuration file help:
+The configuration file is a json file. Default config path is $HOME/.envy/config.json.
+If no config file is specified. This is the path that will be used. If no file exists
+at the default or given config file path, these default values will be used.
+
+In the config file, values may be omitted. These will be set to the default values.
+
+If you want an example default config, use the '-d' flag instead.
+
+Default Config:
+    # the directory where note files are placed
+    "root_dir": "$HOME/notes",  
+
+    # subdirectory name in root_dir for notes specific to papers
+    "papers_dirname": "papers",
+
+    # subdirectory name in root_dir for daily notes
+    "daily_dirname": "daily",
+
+    # path used as serve path for http server
+    "serve_path": "$HOME/.envy/web"
+"""
+    )
+
