@@ -21,6 +21,7 @@ pdf_re = re.compile(r"\(notes/(.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 base_path = "./notes/"
+mathjax_path = "./assets/mathjax/es5"
 
 APP_NAME = "NoteView"
 ADDRESS = "localhost"
@@ -337,7 +338,7 @@ def refresh_files():
     # copy css file to assets
     shutil.copyfile(css_file_path, os.path.join(serve_path, css_file_path))
     shutil.copyfile(favicon_path, os.path.join(serve_path, favicon_path))
-    shutil.copytree("./assets/mathjax/es5", os.path.join(serve_path, assets_path, "mathjax"))
+    shutil.copytree(mathjax_path, os.path.join(serve_path, assets_path, "mathjax"))
 
     for pdf in pdfs:
         out_path = os.path.join(serve_path, pdf.replace(base_path, ""))
