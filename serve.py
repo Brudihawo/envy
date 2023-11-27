@@ -21,7 +21,7 @@ hn = logging.StreamHandler()
 hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
 
-link_re = re.compile(r"\((.*?)\.md\)")
+link_re = re.compile(r"\((.*?)\.md(#.*){0,1}\)")
 pdf_re = re.compile(r"\((.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
@@ -334,7 +334,7 @@ def convert_file(in_path, out_path, css_file_path):
 <a href="/index.html"><img src="/{assets_dir_name}/{favicon_file_name}" width="{logo_d}" height="{logo_d}"></img></a>
 """
 
-        content = link_re.sub(r"(/\1.html)", content)
+        content = link_re.sub(r"(/\1.html\2)", content)
         content = pdf_re.sub(r"(/\1.pdf\2)", content)
         content = empty_re.sub(r"", content)
         content = content.replace(r"\(", r"\\(")
