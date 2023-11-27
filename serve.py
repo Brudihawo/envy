@@ -26,7 +26,7 @@ pdf_re = re.compile(r"\((.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 
-APP_NAME = "NoteView"
+APP_NAME = "Envy"
 ADDRESS = "localhost"
 PORT = 6969
 
@@ -205,7 +205,7 @@ def generate_index(serve_path: str, css_file_path: str, files: list[str], root_d
 <title>{APP_NAME}: Collection of my Notes</title>
 </head>
 <body class="markdown-body">
-<h1><img src="/assets/favicon.ico" width="{logo_d}" height="{logo_d}"></img>oteView: Collection of my Notes</h1>
+<h1><img src="/assets/favicon.ico" width="{logo_d}" height="{logo_d}"></img> Note Viewer</h1>
 The notes are separated into daily and paper-specific notes.
 This page contains an overview over all present notes.
 """
@@ -412,7 +412,7 @@ class FileEventHandler(pyinotify.ProcessEvent):
         self.last_time = datetime.datetime.now()
 
         window = subprocess.run(
-            ["xdotool", "search", "--name", "NoteView:"], capture_output=True
+            ["xdotool", "search", "--name", f"{APP_NAME}:"], capture_output=True
         )
         if window.returncode == 0:
             win_ids = window.stdout.decode().splitlines()
