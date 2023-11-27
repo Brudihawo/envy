@@ -300,7 +300,7 @@ This page contains an overview over all present notes.
         file.write("</ul>\n</div>")
 
 
-def convert_file(in_path, out_path, css_file_path):
+def convert_file(in_path, out_path, css_file_path, root_dir):
     logger.debug(f"converting {in_path} -> {out_path}")
     with open(in_path, "r") as f:
         content = f.read()
@@ -335,6 +335,7 @@ def convert_file(in_path, out_path, css_file_path):
 """
         else:
             name = in_path.replace(".md", "")
+            name = os.path.relpath(name, start=root_dir)
             html += f"""
 <title>{APP_NAME}: {name}</title>
 <link rel="stylesheet" href="/{css_file_path}">
@@ -398,7 +399,7 @@ def refresh_files(serve_dir, root_dir):
         out_path = os.path.join(
             serve_dir, file.replace(root_dir, "").strip("/").replace(".md", ".html")
         )
-        convert_file(file, out_path, css_file_path)
+        convert_file(file, out_path, css_file_path, root_dir)
 
 
 class FileEventHandler(pyinotify.ProcessEvent):
