@@ -21,8 +21,8 @@ hn = logging.StreamHandler()
 hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logger.addHandler(hn)
 
-link_re = re.compile(r"\(notes/(.*?)\.md\)")
-pdf_re = re.compile(r"\(notes/(.*?).pdf(#.*){0,1}\)")
+link_re = re.compile(r"\((.*?)\.md\)")
+pdf_re = re.compile(r"\((.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
 

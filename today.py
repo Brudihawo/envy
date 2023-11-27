@@ -34,11 +34,11 @@ def cal_today() -> str:
     return cal
 
 
-def update_file_with_next(fname: str, next_fname: str):
+def update_file_with_next(fname: str, next_fname_rel: str):
     with open(fname, "r") as f:
         contents = f.read()
 
-    contents = contents.replace(NEXT_EMPTY, f"[next]({next_fname})")
+    contents = contents.replace(NEXT_EMPTY, f"[next]({next_fname_rel})")
     with open(fname, "w") as f:
         f.write(contents)
 
@@ -48,7 +48,7 @@ def today_filename(daily_path: str) -> str:
     return os.path.join(daily_path, f"{now:%y-%m-%d}.md")
 
 
-def open_today(daily_path: str):
+def open_today(daily_path: str, root_path: str):
     now: datetime = datetime.now()
     fname: str = today_filename(daily_path)
     if not os.path.exists(fname):
@@ -59,8 +59,10 @@ def open_today(daily_path: str):
             f.write(f"# {now:%d.%m.%y}\n\n")
             le = last_entry(daily_path)
             if le is not None:
-                f.write(f"[last]({le})\n")
-                update_file_with_next(le, fname)
+                le_rel = os.path.relpath(le, start=root_path)
+                f.write(f"[last]({le_rel})\n")
+                rel_path: str = os.path.relpath(fname, root_path)
+                update_file_with_next(le, rel_path)
             else:
                 print("Did not find last entry", file=sys.stderr)
             f.write(NEXT_EMPTY)
@@ -127,7 +129,7 @@ def main():
     if args.last:
         open_last(daily_path)
     else:
-        open_today(daily_path)
+        open_today(daily_path, cfg.root_dir)
 
 
 if __name__ == "__main__":
