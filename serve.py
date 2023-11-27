@@ -353,6 +353,7 @@ def convert_file(in_path, out_path, css_file_path):
         content = content.replace(r"\]", r"\\]")
         content = content.replace(r"\{", r"\\{")
         content = content.replace(r"\}", r"\\}")
+        content = content.replace(r"\\", r"\\\\")
         converted = pycmarkgfm.gfm_to_html(
             content,
             options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe,
