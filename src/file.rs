@@ -42,8 +42,6 @@ impl File {
             // TODO: handle empty metadata
             let meta = parts.next().expect("metadata is present");
             let meta: PaperMeta = serde_yaml::from_str(meta).expect("Parseable Metadata");
-            //     // TODO: handle empty content
-            //     let _file_content = parts.next().expect("there is some content in the file");
             ret.meta = Some(meta);
         } else {
             ret.meta = None

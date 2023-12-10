@@ -42,6 +42,7 @@ fn html_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
 
 async fn get_file(path: Uri) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
+    // TODO: query file cache first
     headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
 
     let str_path = format!("{NOTES_PATH}{str_path}", str_path = path.to_string());
@@ -65,11 +66,23 @@ async fn get_file(path: Uri) -> impl IntoResponse {
 }
 
 async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
-    let mut file_contents = String::new();
-    file.read_to_string(&mut file_contents).await.unwrap();
-    file_contents = file_contents.replace(NOTES_PATH, "");
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).await.unwrap();
+    contents = contents.replace(NOTES_PATH, "");
 
-    let parser = Parser::new_ext(&file_contents, Options::all());
+    let mod_contents: &str = if contents.starts_with("---") {
+        // has yaml frontmatter
+        // try to find end of frontmatter
+        let mut parts = contents.split("---\n");
+        let _empty = parts.next().expect("metadata is present");
+        // TODO: handle empty metadata
+        let _meta = parts.next().expect("metadata is present");
+        parts.next().unwrap_or("")
+    } else {
+        contents.as_str()
+    };
+
+    let parser = Parser::new_ext(&mod_contents, Options::all());
     let mut html_output = String::new();
 
     pulldown_cmark::html::push_html(&mut html_output, parser);
