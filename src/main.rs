@@ -149,40 +149,14 @@ async fn index_page() -> Html<String> {
         })
         .map(|e| async move {
             // TODO handle pdfs
-            let mut contents = String::new();
-            let mut file = tokio::fs::File::open(e.path()).await.expect("file exists");
+            let file = tokio::fs::File::open(e.path()).await.expect("file exists");
             let metadata = file.metadata().await.expect("file has readable metadata");
-            // TODO: Don't read the entire file
             File {
                 modified: metadata.modified().expect("fstat is available"),
                 path: e.path().to_path_buf(),
                 loaded_content: None,
                 meta: None,
             }
-            // if contents.starts_with("---") {
-            //     // has yaml frontmatter
-            //     // try to find end of frontmatter
-            //     let mut parts = contents.split("---\n");
-            //     let _empty = parts.next().expect("metadata is present");
-            //     // TODO: handle empty metadata
-            //     let meta = parts.next().expect("metadata is present");
-            //     let meta: PaperMeta = serde_yaml::from_str(meta).expect("Parseable Metadata");
-            //     // TODO: handle empty content
-            //     let _file_content = parts.next().expect("there is some content in the file");
-            //     File {
-            //         modified: metadata.modified().expect("fstat is available"),
-            //         path: e.path().to_path_buf(),
-            //         loaded_content: None,
-            //         meta: Some(meta),
-            //     }
-            // } else {
-            //     File {
-            //         modified: metadata.modified().expect("fstat is available"),
-            //         path: e.path().to_path_buf(),
-            //         loaded_content: None,
-            //         meta: None,
-            //     }
-            // }
         });
 
     for file in files {
@@ -243,7 +217,7 @@ async fn index_page() -> Html<String> {
     // <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
     // <ul id="papers">
     // """
-    for (path, paper) in NOTES.lock().unwrap().papers.iter() {
+    for (_path, paper) in NOTES.lock().unwrap().papers.iter() {
         let meta = &paper.meta.as_ref().unwrap();
         // f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
         papers.push_str(&format!("<li><strong>{title}</strong></br>{year} <em>{authors}</em></br><a href=\"{path}\">{fname}</a></li>", 

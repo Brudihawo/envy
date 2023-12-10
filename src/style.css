@@ -6,9 +6,18 @@
 body {
   background: #181820;
   color: #dddddd;
-  width: 50%;
+  width: 75%;
   margin: auto;
 }
+
+a {
+  color: #8888ff;
+}
+
+a:hover {
+  color: #ffaaff;
+}
+
 
 .mcol_ul {
   counter-reset: section;
