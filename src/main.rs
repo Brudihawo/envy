@@ -1,40 +1,27 @@
 #![feature(async_iterator)]
-use std::path::PathBuf;
+#![feature(async_closure)]
+use once_cell::sync::{Lazy, OnceCell};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{Html, IntoResponse};
 use axum::{routing::get, Router};
-use pulldown_cmark::{Options, Parser};
+use cfg_if::cfg_if;
 use tokio::io::AsyncReadExt;
-use tracing_subscriber;
 
-use envy::bibtex::BibtexEntry;
+use pulldown_cmark::{Options, Parser};
+
+use envy::file::{File, PaperMeta};
+use tracing_subscriber;
 
 const NOTES_PATH: &str = "/home/hawo/notes";
 
-struct InterimPaperMeta {
-    tags: Option<Vec<String>>,
-    bibtex: String,
-    pdf: PathBuf,
-}
-
-enum FType {
-    PaperNote {
-        content: String,
-        meta: Option<String>,
-    },
-    OtherNote {
-        content: String,
-    },
-    Pdf {
-        bytes: Vec<u8>,
-    },
-}
-
-struct File {
-    modified: std::time::SystemTime,
-    path: std::path::PathBuf,
-    content: String,
+#[derive(Default)]
+struct Notes {
+    papers: HashMap<String, File>,
+    daily: HashMap<String, File>,
+    other: HashMap<String, File>,
 }
 
 fn html_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
@@ -42,6 +29,7 @@ fn html_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
         "<!DOCTYPE html>
 <html lang=\"en\">
 <meta charset=\"UTF-8\"/>
+<link rel=\"stylesheet\" href=\"/style.css\">
 <title>{title}</title>
 <body>
     {body_pre}
@@ -93,6 +81,29 @@ async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
     )
 }
 
+cfg_if! {
+    if #[cfg(reload_css)] {
+        async fn style() -> impl IntoResponse {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/css".parse().unwrap());
+
+            (headers, include_str!("style.css"))
+        }
+    } else {
+        async fn style() -> impl IntoResponse {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/css".parse().unwrap());
+
+            let mut file = tokio::fs::File::open("src/style.css").await.unwrap();
+            let mut content = String::new();
+            file.read_to_string(&mut content).await.unwrap();
+            (headers, content)
+        }
+    }
+}
+
+static NOTES: Lazy<Arc<Mutex<Notes>>> = Lazy::new(|| Arc::new(Mutex::new(Notes::default())));
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -100,6 +111,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
+        .route("/style.css", get(style))
         .route("/*path.md", get(get_file));
 
     let address = "localhost:6969";
@@ -110,12 +122,7 @@ async fn main() {
 }
 
 async fn favicon() -> impl IntoResponse {
-    let mut bytes = Vec::new();
-    let mut file = tokio::fs::File::open("/home/hawo/workspace/envy/assets/favicon.ico")
-        .await
-        .unwrap();
-    file.read_to_end(&mut bytes).await.unwrap();
-
+    let bytes = include_bytes!("../assets/favicon.ico");
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, "image/png".parse().unwrap());
     headers.insert(
@@ -128,7 +135,7 @@ async fn favicon() -> impl IntoResponse {
 
 async fn index_page() -> Html<String> {
     use walkdir::WalkDir;
-    let infos = WalkDir::new(NOTES_PATH)
+    let files = WalkDir::new(NOTES_PATH)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -143,32 +150,111 @@ async fn index_page() -> Html<String> {
         .map(|e| async move {
             // TODO handle pdfs
             let mut contents = String::new();
-            tokio::fs::File::open(e.path())
-                .await
-                .expect("file exists")
-                .read_to_string(&mut contents)
-                .await
-                .unwrap();
-            if contents.starts_with("---") {
-                // has yaml frontmatter
-                // try to find end of frontmatter
-                let mut parts = contents.split("---\n");
-                let _empty = parts.next().expect("metadata is present");
-                // TODO: handle empty metadata
-                let meta = parts.next().expect("metadata is present");
-                // TODO: handle empty content
-                let _file_content = parts.next().expect("there is some content in the file");
-                meta.to_string()
-            } else {
-                e.path().display().to_string()
+            let mut file = tokio::fs::File::open(e.path()).await.expect("file exists");
+            let metadata = file.metadata().await.expect("file has readable metadata");
+            // TODO: Don't read the entire file
+            File {
+                modified: metadata.modified().expect("fstat is available"),
+                path: e.path().to_path_buf(),
+                loaded_content: None,
+                meta: None,
             }
+            // if contents.starts_with("---") {
+            //     // has yaml frontmatter
+            //     // try to find end of frontmatter
+            //     let mut parts = contents.split("---\n");
+            //     let _empty = parts.next().expect("metadata is present");
+            //     // TODO: handle empty metadata
+            //     let meta = parts.next().expect("metadata is present");
+            //     let meta: PaperMeta = serde_yaml::from_str(meta).expect("Parseable Metadata");
+            //     // TODO: handle empty content
+            //     let _file_content = parts.next().expect("there is some content in the file");
+            //     File {
+            //         modified: metadata.modified().expect("fstat is available"),
+            //         path: e.path().to_path_buf(),
+            //         loaded_content: None,
+            //         meta: Some(meta),
+            //     }
+            // } else {
+            //     File {
+            //         modified: metadata.modified().expect("fstat is available"),
+            //         path: e.path().to_path_buf(),
+            //         loaded_content: None,
+            //         meta: None,
+            //     }
+            // }
         });
-    let mut s = String::new();
-    for info in infos {
-        let info = info.await;
-        s.push_str(&format!("<p>{info}</p>"))
+
+    for file in files {
+        let file = file.await;
+        let parent = file
+            .path
+            .parent()
+            .expect("must have at least parent of note folder");
+        match parent.file_name().unwrap().to_str().unwrap() {
+            "papers" => {
+                NOTES
+                    .lock()
+                    .unwrap()
+                    .papers
+                    .entry(file.path.to_str().unwrap().to_string())
+                    .and_modify(|note| {
+                        if note.modified < file.modified {
+                            *note = file.with_meta();
+                        }
+                    })
+                    .or_insert(file.with_meta());
+            }
+            "daily" => {
+                NOTES
+                    .lock()
+                    .unwrap()
+                    .daily
+                    .entry(file.path.to_str().unwrap().to_string())
+                    .and_modify(|note| {
+                        if note.modified < file.modified {
+                            *note = file.clone();
+                        }
+                    })
+                    .or_insert(file);
+            }
+            _ => {
+                NOTES
+                    .lock()
+                    .unwrap()
+                    .other
+                    .entry(file.path.to_str().unwrap().to_string())
+                    .and_modify(|note| {
+                        if note.modified < file.modified {
+                            *note = file.clone();
+                        }
+                    })
+                    .or_insert(file);
+            }
+        }
     }
-    html_page("Envy - Note Viewer", "", &s)
+
+    let mut papers = String::new();
+    papers.push_str("<h2>Paper Notes</h2>\n  <ul id=papers>");
+    //         file.write(
+    //             f"""<h2>Paper-Notes</h2>
+    // <input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
+    // {filter_script}
+    // <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
+    // <ul id="papers">
+    // """
+    for (path, paper) in NOTES.lock().unwrap().papers.iter() {
+        let meta = &paper.meta.as_ref().unwrap();
+        // f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
+        papers.push_str(&format!("<li><strong>{title}</strong></br>{year} <em>{authors}</em></br><a href=\"{path}\">{fname}</a></li>", 
+            title=meta.bibtex.title, 
+            authors=meta.bibtex.author, 
+            year=meta.bibtex.year, 
+            path=paper.path.strip_prefix(NOTES_PATH).unwrap().display(), 
+            fname=paper.path.file_name().unwrap().to_str().unwrap()));
+    }
+    papers.push_str("</ul>");
+    html_page("Envy - Note Viewer", "", &papers)
 }
 
 async fn root() -> Html<String> {

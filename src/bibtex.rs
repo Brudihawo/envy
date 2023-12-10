@@ -1,7 +1,6 @@
-use serde::Deserialize;
-use std::collections::HashMap;
+use serde::{de::Visitor, Deserialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub enum EntryKind {
     Article,
     Book,
@@ -42,22 +41,18 @@ impl EntryKind {
     }
 }
 
+#[derive(Clone)]
 pub struct BibtexEntry {
-    kind: EntryKind,
-    name: String,
-    author: String,
-    year: String,
-    title: String,
+    pub kind: EntryKind,
+    pub name: String,
+    pub author: String,
+    pub year: String,
+    pub title: String,
 }
 
 struct BibtexParser<'a> {
     data: &'a [u8], // we assume ascii content in bibtex entries
     cursor: usize,
-}
-
-struct KV {
-    key: (usize, usize),
-    value: (usize, usize),
 }
 
 impl<'a> BibtexParser<'a> {
@@ -202,7 +197,6 @@ impl BibtexEntry {
             parser.skip_whitespace();
             let key = parser.parse_key()?;
             parser.skip_whitespace();
-            println!("{}", key);
             match key {
                 "author" => author = Some(parser.parse_value()?),
                 "year" => year = Some(parser.parse_value()?),
@@ -231,6 +225,31 @@ impl BibtexEntry {
                 }
             }
         }
+    }
+}
+
+struct StrVisitor;
+impl<'de> Visitor<'de> for StrVisitor {
+    type Value = BibtexEntry;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("Expected a valid BibTeX entry.")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        BibtexEntry::try_from_str(v).map_err(|err| E::custom(err))
+    }
+}
+
+impl<'de> Deserialize<'de> for BibtexEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(StrVisitor)
     }
 }
 
