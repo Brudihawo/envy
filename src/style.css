@@ -1,0 +1,37 @@
+:root {
+  --cols: 5;
+  --col_gap: 10px;
+}
+
+body {
+  background: #181820;
+  color: #dddddd;
+  width: 50%;
+  margin: auto;
+}
+
+.mcol_ul {
+  counter-reset: section;
+  -moz-column-count: var(--cols);
+  -moz-column-gap: var(--col_gap);
+  -webkit-column-count: var(--cols);
+  -webkit-column-gap: var(--col_gap);
+  column-count: var(--cols);
+  column-gap: var(--col_gap);
+}
+
+.mcol_li {
+  padding-left: 0px;
+  position: relative;
+}
+
+.mcol_li:before {
+  couner-increment: section;
+  counter: counter(section) ".";
+  margin: 0 0 0 -34px;
+  text-align: right;
+  width: 2em;
+  display: inline-block;
+  position: absolute;
+  height: 100%;
+}
