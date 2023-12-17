@@ -10,10 +10,12 @@ use axum::{routing::get, Router};
 use cfg_if::cfg_if;
 use tokio::io::AsyncReadExt;
 
-use pulldown_cmark::{Options, Parser};
+use pulldown_cmark::{Options, Parser, CowStr};
 
 use envy::file::{File, PaperMeta};
 use tracing_subscriber;
+
+use std::path::PathBuf;
 
 const NOTES_PATH: &str = "/home/hawo/notes";
 
@@ -68,9 +70,8 @@ async fn get_file(path: Uri) -> impl IntoResponse {
 async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.unwrap();
-    contents = contents.replace(NOTES_PATH, "");
 
-    let mod_contents: &str = if contents.starts_with("---") {
+    let mut mod_contents: &str = if contents.starts_with("---") {
         // has yaml frontmatter
         // try to find end of frontmatter
         let mut parts = contents.split("---\n");
@@ -82,10 +83,37 @@ async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
         contents.as_str()
     };
 
+
+
     let parser = Parser::new_ext(&mod_contents, Options::all());
     let mut html_output = String::new();
 
-    pulldown_cmark::html::push_html(&mut html_output, parser);
+    fn transform_url(url: CowStr) -> CowStr {
+        if url.starts_with("http") {
+            return url;
+        }
+
+        if url.starts_with("/") {
+            return url;
+        }
+
+        CowStr::from(format!("/{}", url))
+    }
+
+    pulldown_cmark::html::push_html(&mut html_output, parser.map(|e| {
+        use pulldown_cmark::{Event, Tag};
+        match e {
+            Event::Start(Tag::Link(ltype, mut url, title)) => {
+                url = transform_url(url);
+                Event::Start(Tag::Link(ltype, url, title))
+            },
+            Event::End(Tag::Link(ltype, mut url, title)) => {
+                url = transform_url(url);
+                Event::End(Tag::Link(ltype, url, title))
+            }
+            other => other
+        }
+    }));
 
     html_page(
         "Hello, World",
