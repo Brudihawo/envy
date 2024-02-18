@@ -330,6 +330,19 @@ async fn index_page() -> Html<String> {
             fname=paper.path.file_name().unwrap().to_str().unwrap()));
     }
     papers.push_str("</ul>");
+    papers.push_str("<h2>Daily Notes</h2>");
+    papers.push_str(
+        "<div style=\"height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n"
+    );
+    papers.push_str("<ul class=\"mcol_ul\" id=\"daily\">\n");
+    for (_path, note) in NOTES.lock().unwrap().daily.iter() {
+        papers.push_str(
+            &format!("<li><a href=\"{}\">{}</a></li>", 
+                    note.path.strip_prefix(NOTES_PATH).unwrap().display(), 
+                    note.path.file_name().unwrap().to_str().unwrap())
+        )
+    }
+    papers.push_str("</ul>\n</div>");
     note_page("Envy - Note Viewer", "", &papers)
 }
 
