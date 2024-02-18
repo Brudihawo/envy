@@ -30,6 +30,7 @@ fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
 <html lang=\"en\">
 <meta charset=\"UTF-8\"/>
 <link rel=\"stylesheet\" href=\"/style.css\">
+<script src=\"/script.js\"></script>
 <title>{title}</title>
 <body>
     {body_pre}
@@ -50,8 +51,15 @@ async fn get_file(path: Uri) -> Response<axum::body::Body> {
     if p.ends_with(".md") {
         return get_md(path).await;
     } 
+    if p == "/script.js" {
+        let file_contents = include_str!("script.js");
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
+        return (headers, file_contents).into_response();
 
-    todo!("Unhandled file type")
+    }
+
+    todo!("Unhandled file type of path: '{p}'")
 }
 
 async fn get_pdf(path: Uri) -> Response<axum::body::Body> {
@@ -311,31 +319,59 @@ async fn index_page() -> Html<String> {
     }
 
     let mut papers = String::new();
-    papers.push_str("<h2>Paper Notes</h2>\n  <ul id=papers>");
+    papers.push_str("<h2>Paper Notes</h2>\n");
+    papers.push_str("<input type=\"text\" id=\"paper_search\" onkeyup=\"filter_list('papers', 'paper_search')\" placeholder=\"Search Tags or Names\">\n");
+    papers.push_str("<div style=\"height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n");
+    papers.push_str("<ul id='papers'>");
     //         file.write(
     //             f"""<h2>Paper-Notes</h2>
-    // <input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
     // {filter_script}
     // <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
     // <ul id="papers">
     // """
     for (_path, paper) in NOTES.lock().unwrap().papers.iter() {
         let meta = &paper.meta.as_ref().unwrap();
-        // f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
-        papers.push_str(&format!("<li><strong>{title}</strong></br>{year} <em>{authors}</em></br><a href=\"{path}\">{fname}</a></li>", 
+
+        let mut tags = String::from("[");
+        if let Some(mtags) = &meta.tags {
+            for (i, tag) in mtags.iter().enumerate() {
+                if i > 0 {
+                    tags.push_str(",");
+                }
+                tags.push_str(tag);
+            }
+        }
+        tags.push_str("]");
+
+        papers.push_str(&format!("<li authors=\"{authors}\" tags=\"{tags}\" title=\"{title}\"><strong>{title}</strong></br>{year} <em>{authors}</em></br><a href=\"{path}\">{fname}</a></li>", 
             title=meta.bibtex.title, 
             authors=meta.bibtex.author, 
             year=meta.bibtex.year, 
             path=paper.path.strip_prefix(NOTES_PATH).unwrap().display(), 
             fname=paper.path.file_name().unwrap().to_str().unwrap()));
     }
-    papers.push_str("</ul>");
+    papers.push_str("</ul>\n</div>\n");
+
     papers.push_str("<h2>Daily Notes</h2>");
     papers.push_str(
         "<div style=\"height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n"
     );
     papers.push_str("<ul class=\"mcol_ul\" id=\"daily\">\n");
     for (_path, note) in NOTES.lock().unwrap().daily.iter() {
+        papers.push_str(
+            &format!("<li><a href=\"{}\">{}</a></li>", 
+                    note.path.strip_prefix(NOTES_PATH).unwrap().display(), 
+                    note.path.file_name().unwrap().to_str().unwrap())
+        )
+    }
+    papers.push_str("</ul>\n</div>");
+
+    papers.push_str("<h2>Other Notes</h2>");
+    papers.push_str(
+        "<div style=\"height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n"
+    );
+    papers.push_str("<ul class=\"mcol_ul\" id=\"daily\">\n");
+    for (_path, note) in NOTES.lock().unwrap().other.iter() {
         papers.push_str(
             &format!("<li><a href=\"{}\">{}</a></li>", 
                     note.path.strip_prefix(NOTES_PATH).unwrap().display(), 
