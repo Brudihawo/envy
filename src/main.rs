@@ -1,10 +1,10 @@
 #![feature(async_iterator)]
 #![feature(async_closure)]
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use axum::http::{header, HeaderMap, StatusCode, Uri};
+use axum::http::{header, HeaderMap, Response, StatusCode, Uri};
 use axum::response::{Html, IntoResponse};
 use axum::{routing::get, Router};
 use cfg_if::cfg_if;
@@ -15,8 +15,6 @@ use pulldown_cmark::{Options, Parser, CowStr};
 use envy::file::{File, PaperMeta};
 use tracing_subscriber;
 
-use std::path::PathBuf;
-
 const NOTES_PATH: &str = "/home/hawo/notes";
 
 #[derive(Default)]
@@ -26,7 +24,7 @@ struct Notes {
     other: HashMap<String, File>,
 }
 
-fn html_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
+fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
     format!(
         "<!DOCTYPE html>
 <html lang=\"en\">
@@ -42,7 +40,54 @@ fn html_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
     .into()
 }
 
-async fn get_file(path: Uri) -> impl IntoResponse {
+async fn get_file(path: Uri) -> Response<axum::body::Body> {
+    if path.path().ends_with(".pdf") {
+        return get_pdf(path).await;
+    } else if path.path().ends_with(".md") {
+        return get_md(path).await;
+    } else {
+        todo!("Unhandled file type")
+    }
+}
+
+async fn get_pdf(path: Uri) -> Response<axum::body::Body> {
+    let mut headers = HeaderMap::new();
+    // TODO: query file cache first
+    headers.insert(header::CONTENT_TYPE, "application/pdf".parse().unwrap());
+
+    let str_path = format!("{NOTES_PATH}{str_path}", str_path = path.to_string());
+
+    let mut file = match tokio::fs::File::open(&str_path).await {
+        Ok(file) => file,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                note_page(
+                    "Error 404, File not Found",
+                    "",
+                    &format!("Could not find file {str_path}"),
+                ),
+            )
+                .into_response();
+        }
+    };
+    let mut buf = Vec::new();
+    let _ = file.read_to_end(&mut buf).await.map_err(|err| {
+            (
+                StatusCode::OK,
+                note_page(
+                    "Error Reading File",
+                    "",
+                    &format!("Could not read file {str_path}: '{err}'"),
+                ),
+            )
+                .into_response();
+
+    });
+
+    (headers, buf).into_response()}
+
+async fn get_md(path: Uri) -> Response<axum::body::Body> {
     let mut headers = HeaderMap::new();
     // TODO: query file cache first
     headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
@@ -54,7 +99,7 @@ async fn get_file(path: Uri) -> impl IntoResponse {
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
-                html_page(
+                note_page(
                     "Error 404, File not Found",
                     "",
                     &format!("Could not find file {str_path}"),
@@ -64,23 +109,32 @@ async fn get_file(path: Uri) -> impl IntoResponse {
         }
     };
 
-    (headers, compile_markdown(file).await).into_response()
+    (headers, compile_markdown(file, &str_path).await).into_response()
 }
 
-async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
+async fn compile_markdown(mut file: tokio::fs::File, fname: &str) -> Html<String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.unwrap();
 
-    let mut mod_contents: &str = if contents.starts_with("---") {
+    let mut pdf_file = None;
+    let (mod_contents, title): (&str, String) = if contents.starts_with("---") {
         // has yaml frontmatter
         // try to find end of frontmatter
         let mut parts = contents.split("---\n");
         let _empty = parts.next().expect("metadata is present");
         // TODO: handle empty metadata
-        let _meta = parts.next().expect("metadata is present");
-        parts.next().unwrap_or("")
+        let title: String = match parts.next().and_then(|x| serde_yaml::from_str(x).ok()) {
+            None => fname.to_string(),
+            Some(PaperMeta { tags: _tags, bibtex, pdf}) => {
+                pdf_file = Some(pdf);
+                format!("Note for Paper: {}", &bibtex.title)
+            }
+        };
+
+
+        (parts.next().unwrap_or(""), title)
     } else {
-        contents.as_str()
+        (contents.as_str(), fname.to_string())
     };
 
 
@@ -93,7 +147,7 @@ async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
             return url;
         }
 
-        if url.starts_with("/") {
+        if url.starts_with("/") || url.starts_with("#") {
             return url;
         }
 
@@ -115,9 +169,13 @@ async fn compile_markdown(mut file: tokio::fs::File) -> Html<String> {
         }
     }));
 
-    html_page(
-        "Hello, World",
-        "<img width=\"32\" height=\"32\" src=\"/favicon.ico\">",
+
+    note_page(
+        &format!("{title}"),
+        &format!("<a href=\"/\"><img width=\"32\" height=\"32\" src=\"/favicon.ico\"></a>{}", 
+        if let Some(pdf) = pdf_file {
+            format!("\n Note for <a href={pdf}>{pdf}</a>", pdf=pdf.to_str().unwrap().to_string())
+        } else { String::new() }),
         &html_output,
     )
 }
@@ -153,7 +211,7 @@ async fn main() {
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
         .route("/style.css", get(style))
-        .route("/*path.md", get(get_file));
+        .route("/*path", get(get_file)); // TODO: handle links with tags
 
     let address = "localhost:6969";
 
@@ -269,7 +327,7 @@ async fn index_page() -> Html<String> {
             fname=paper.path.file_name().unwrap().to_str().unwrap()));
     }
     papers.push_str("</ul>");
-    html_page("Envy - Note Viewer", "", &papers)
+    note_page("Envy - Note Viewer", "", &papers)
 }
 
 async fn root() -> Html<String> {
