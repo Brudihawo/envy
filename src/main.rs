@@ -41,18 +41,21 @@ fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
 }
 
 async fn get_file(path: Uri) -> Response<axum::body::Body> {
-    if path.path().ends_with(".pdf") {
+    let p = path.path();
+    // TODO: query file cache first
+
+    if p.ends_with(".pdf") {
         return get_pdf(path).await;
-    } else if path.path().ends_with(".md") {
+    } 
+    if p.ends_with(".md") {
         return get_md(path).await;
-    } else {
-        todo!("Unhandled file type")
-    }
+    } 
+
+    todo!("Unhandled file type")
 }
 
 async fn get_pdf(path: Uri) -> Response<axum::body::Body> {
     let mut headers = HeaderMap::new();
-    // TODO: query file cache first
     headers.insert(header::CONTENT_TYPE, "application/pdf".parse().unwrap());
 
     let str_path = format!("{NOTES_PATH}{str_path}", str_path = path.to_string());
