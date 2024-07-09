@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from functools import lru_cache
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
 import shutil
@@ -12,19 +13,23 @@ import datetime
 import argparse
 import json
 import urllib.request
+from functools import lru_cache
+import shlex
+import sys
 
 from bibtex_parser import Parser, Entry
 from config import get_config, Config, print_config_help
 
 logger = logging.Logger("logger")
 hn = logging.StreamHandler()
-hn.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+hn.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logger.addHandler(hn)
 
 link_re = re.compile(r"\((.*?)\.md(#.*){0,1}\)")
 pdf_re = re.compile(r"\((.*?).pdf(#.*){0,1}\)")
 empty_re = re.compile(r"\[next\]\(<empty>\)")
 header_re = re.compile(r"---\n([\s\S]*)\n---\n", flags=re.MULTILINE)
+script_path = os.path.dirname(__file__)
 
 APP_NAME = "Envy"
 ADDRESS = "localhost"
@@ -63,43 +68,10 @@ markdown_insert = """<style>
 }
 </style>
 """
-filter_script = """
-<script>
-function matches(tags, filter) {
-  if (filter == 'READ' || filter == 'UNREAD' || filter == 'READING') {
-    return tags.map((tag) => tag.toUpperCase()).includes(filter);
-  }
 
-  for (let i = 0; i < tags.length; i++) {
-    if (tags[i].toUpperCase().includes(filter)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function filter(list_id, query_id) {
-  var input = document.getElementById(query_id);
-  var filter = input.value.toUpperCase();
-  var ul = document.getElementById(list_id);
-  li = ul.getElementsByTagName('li');
-
-  var a;
-  for (let i = 0; i < li.length; ++i) {
-    a = li[i].getElementsByTagName('a')[0];
-    var tags = li[i].getAttribute("tags").split(", ");
-    var title = li[i].getAttribute("title").toUpperCase();
-    var authors = li[i].getAttribute("authors").toUpperCase();
-
-    if (filter == "" || matches(tags, filter) || title.includes(filter) || authors.includes(filter)) {
-      li[i].style.display = "";
-    } else {
-      li[i].style.display = "none";
-    }
-  }
-}
-</script>
-"""
+with open(os.path.join(script_path, "filter.js"), "r") as file:
+    filter_script = file.read()
+filter_script = f"""<script>\n{filter_script}\n</script>\n"""
 
 logo_d = 32
 
@@ -143,38 +115,58 @@ def strip_value_or_empty(val: str | None) -> str:
 def collect_structure(folder_path) -> tuple[list[str], list[str], list[str]]:
     files = []
     folders = []
-    pdfs = []
+    copy_docs = []
     for ent in os.scandir(folder_path):
         if ent.is_file():
             if ent.path.endswith(".md"):
                 files.append(ent.path)
             elif ent.path.endswith(".pdf"):
-                pdfs.append(ent.path)
+                copy_docs.append(ent.path)
+            elif ent.path.endswith(".png"):
+                copy_docs.append(ent.path)
         elif ent.is_dir():
             folders.append(ent.path)
-            sub_files, sub_pdfs, sub_folders = collect_structure(ent.path)
+            sub_files, sub_docs, sub_folders = collect_structure(ent.path)
             files.extend(sub_files)
             folders.extend(sub_folders)
-            pdfs.extend(sub_pdfs)
+            copy_docs.extend(sub_docs)
         else:
             logger.debug(f"Ignoring {ent.path}")
 
     return (
         files,
-        pdfs,
+        copy_docs,
         folders,
     )
 
+def get_file_contents(path: str) -> str | None:
+    with open(path, "r") as f:
+        try:
+            content = f.read()
+        except UnicodeDecodeError as e:
+            logger.error(f"Could not decode file: {path}: {e}")
+            return None
+
+    return content
+
 
 def get_paper_meta(in_path):
-    with open(in_path, "r") as f:
-        content = f.read()
-        match = header_re.match(content)
-        if match is not None:
-            header = yaml.load(match.group(1), Loader=yaml.CLoader)
-            return header
-
+    content = get_file_contents(in_path)
+    if content is None:
         return None
+
+    match = header_re.match(content)
+    if match is None:
+        return None
+
+    try:
+        header = match.group(1)# .replace("\\", "\\\\")
+        header = yaml.load(header, Loader=yaml.CLoader)
+    except Exception as e:
+        logger.error(f"Invalid yaml in '{in_path}': {e}")
+        return None
+
+    return header
 
 
 def generate_index(serve_path: str, css_file_path: str, files: list[str], root_dir):
@@ -302,28 +294,38 @@ This page contains an overview over all present notes.
 
 def convert_file(in_path, out_path, css_file_path, root_dir):
     logger.debug(f"converting {in_path} -> {out_path}")
-    with open(in_path, "r") as f:
-        content = f.read()
-        match = header_re.match(content)
-        html = html_start
-        if match is not None:
-            header_len = len(match.group(0))
-            match = match.group(1)
-            header = yaml.load(match, Loader=yaml.CLoader)
-            bibtex = Parser(header["bibtex"]).parse()
-            if bibtex.is_err():
-                title = ""
-                authors = ""
-                year = ""
-            else:
-                assert isinstance(bibtex, Entry)
-                title = strip_value_or_empty(bibtex.get_or_none("title"))
-                authors = strip_value_or_empty(bibtex.get_or_none("author"))
-                year = strip_value_or_empty(bibtex.get_or_none("year")) + ": "
-            content = content[header_len:]
-            logger.debug(f"found header {header}")
+    content = get_file_contents(in_path)
+    if content is None:
+        return
+
+    logger.debug(f"{in_path}: valid content")
+    match = header_re.match(content)
+    html = html_start
+    if match is not None:
+        logger.debug(f"{in_path}: matched yaml header")
+        header_len = len(match.group(0))
+        match = match.group(1)
+        header = yaml.load(match, Loader=yaml.CLoader)
+        bibtex = Parser(header["bibtex"]).parse()
+        if bibtex.is_err():
+            logger.warn(f"{in_path}: invalid bibtex")
+            title = ""
+            authors = ""
+            year = ""
+        else:
+            logger.debug(f"{in_path}: valid bibtex")
+            assert isinstance(bibtex, Entry)
+            title = strip_value_or_empty(bibtex.get_or_none("title"))
+            authors = strip_value_or_empty(bibtex.get_or_none("author"))
+            year = strip_value_or_empty(bibtex.get_or_none("year")) + ": "
+        content = content[header_len:]
+        logger.debug(f"found header {header}")
+        try:
             pdf_name = os.path.basename(header["pdf"].replace(".pdf", ""))
-            html += f"""
+        except KeyError:
+            pdf_name = "<NONE>"
+            logger.warn(f"Could not find pdf name in header for {in_path}")
+        html += f"""
 <title>{APP_NAME}: {title}</title>
 <link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
@@ -333,10 +335,10 @@ def convert_file(in_path, out_path, css_file_path, root_dir):
 <a href=\"/papers/{header['pdf']}\">Note for {pdf_name}</a>
 <p>{year}<em>{authors}</em></p>
 """
-        else:
-            name = in_path.replace(".md", "")
-            name = os.path.relpath(name, start=root_dir)
-            html += f"""
+    else:
+        name = in_path.replace(".md", "")
+        name = os.path.relpath(name, start=root_dir)
+        html += f"""
 <title>{APP_NAME}: {name}</title>
 <link rel="stylesheet" href="/{css_file_path}">
 {markdown_insert}
@@ -345,25 +347,28 @@ def convert_file(in_path, out_path, css_file_path, root_dir):
 <a href="/index.html"><img src="/{assets_dir_name}/{favicon_file_name}" width="{logo_d}" height="{logo_d}"></img></a>
 """
 
-        content = link_re.sub(r"(/\1.html\2)", content)
-        content = pdf_re.sub(r"(/\1.pdf\2)", content)
-        content = empty_re.sub(r"", content)
-        content = content.replace(r"\(", r"\\(")
-        content = content.replace(r"\)", r"\\)")
-        content = content.replace(r"\[", r"\\[")
-        content = content.replace(r"\]", r"\\]")
-        content = content.replace(r"\{", r"\\{")
-        content = content.replace(r"\}", r"\\}")
-        content = content.replace(r"\\", r"\\\\")
-        converted = pycmarkgfm.gfm_to_html(
-            content,
-            options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe,
-        )
+    content = link_re.sub(r"(/\1.html\2)", content)
+    content = pdf_re.sub(r"(/\1.pdf\2)", content)
+    content = empty_re.sub(r"", content)
+    replaces = [
+        [r"\\", r"\\\\"],
+        *[[f"\\{c}", f"\\\\{c}"] for c in "()[]{}"],
+        *[[f"\\left{c}", f"\\left\\\\{c}"] for c in "{}"],
+        *[[f"\\right{c}", f"\\right\\\\{c}"] for c in "{}"],
+    ]
 
-        with open(out_path, "w") as f:
-            f.write(html)
-            f.write(converted)
-            f.write(html_end)
+    for orig, repl in replaces:
+        content = content.replace(orig, repl)
+
+    converted = pycmarkgfm.gfm_to_html(
+        content,
+        options=pycmarkgfm.options.validate_utf8 | pycmarkgfm.options.unsafe,
+    )
+
+    with open(out_path, "w") as f:
+        f.write(html)
+        f.write(converted)
+        f.write(html_end)
 
 
 def refresh_files(serve_dir, root_dir):
@@ -475,7 +480,7 @@ def main():
     cfg = get_config(fpath=args.use_config)
 
     if not os.path.exists(cfg.root_dir):
-        print(f"""Note directory {cfg.root_dir} does not exist. Exiting...""")
+        logger.fatal(f"""Note directory {cfg.root_dir} does not exist. Exiting...""")
         exit(1)
 
     if not os.path.exists(cfg.serve_path):

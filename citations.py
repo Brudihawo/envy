@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 import re
 import yaml
 import argparse
@@ -50,7 +51,12 @@ def main():
             match = header_re.match(text)
             if match is not None:
                 match = match.group(1)
-                header = yaml.load(match, Loader=yaml.CLoader)
+                try:
+                    header = yaml.load(match, Loader=yaml.CLoader)
+                except Exception as e:
+                    print(f"Could not parse yaml header for {file}: {e}", file=sys.stderr)
+                    continue
+
                 meta: dict[str, str] = header
 
                 entry = first_line_re.sub(r"@\1{\2,\n  ", meta["bibtex"])
