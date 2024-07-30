@@ -31,3 +31,20 @@ function filter(list_id, query_id) {
     }
   }
 }
+
+function filter_tags(list_id, query_id) {
+  var input = document.getElementById(query_id);
+  var filter = input.value.toUpperCase();
+  var ul = document.getElementById(list_id);
+  li = ul.getElementsByTagName('li');
+
+  for (let i = 0; i < li.length; ++i) {
+    tag = li[i].textContent.toUpperCase();
+
+    if (filter == "" || tag.includes(filter)) {
+      li[i].style.display = "";
+    } else {
+      li[i].style.display = "none";
+    }
+  }
+}

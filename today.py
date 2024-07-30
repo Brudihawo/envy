@@ -66,6 +66,10 @@ def open_today(daily_path: str, root_path: str):
             else:
                 print("Did not find last entry", file=sys.stderr)
             f.write(NEXT_EMPTY)
+
+    symlink_path = os.path.join(daily_path, "today.md")
+    print(f"linking '{fname}' to '{symlink_path}'")
+    os.symlink(fname, symlink_path)
     open_in_editor(fname)
 
 

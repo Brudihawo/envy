@@ -172,10 +172,12 @@ def get_paper_meta(in_path):
 def generate_index(serve_path: str, css_file_path: str, files: list[str], root_dir):
     col_gap = 20
     cols = 5
+    all_tags: set[str] = set()
     with open(os.path.join(serve_path, "index.html"), "w") as file:
         file.write(
             f"""{html_start}
 <link rel="stylesheet" href="/{css_file_path}">
+{filter_script}
 {markdown_insert}
 <style>
 .mcol_ul {{
@@ -216,7 +218,6 @@ This page contains an overview over all present notes.
         file.write(
             f"""<h2>Paper-Notes</h2>
 <input type="text" id="paper_search" onkeyup="filter('papers', 'paper_search')" placeholder="Search Tags or Names">
-{filter_script}
 <div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
 <ul id="papers">
 """
@@ -237,6 +238,7 @@ This page contains an overview over all present notes.
                         authors = strip_value_or_empty(bibtex.get_or_none("author"))
                         year = strip_value_or_empty(bibtex.get_or_none("year")) + ": "
 
+                        all_tags.update(meta["tags"])
                     tags = ", ".join(meta["tags"])
                 except KeyError:
                     tags = ""
@@ -255,9 +257,17 @@ This page contains an overview over all present notes.
             file.write(
                 f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
             )
-
         file.write("</ul>\n</div>")
-        file.write(html_end)
+
+        file.write("<h2>Tags</h2>\n")
+        file.write("""<input type="text" id="tag_search" onkeyup="filter_tags('tags', 'tag_search')" placeholder="Search Tags or Names">""")
+        file.write("<div style='height:25vh;width:100%;overflow:scroll;auto;padding-top:10px;'><ul class='mcol_ul' id='tags'>")
+
+
+        for tag in sorted(all_tags):
+            file.write(f"<li class='mcol_li'>{tag}</li>")
+        file.write("</ul></div>")
+
         file.write(
             """<h2>Daily Notes</h2>
 <div style="height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;">
@@ -276,7 +286,7 @@ This page contains an overview over all present notes.
 
         file.write(
             """<h2>Other Notes</h2>
-<div style="height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;">
+<div style="height:20vh;width:100%;overflow:scroll;auto;padding-top:10px;">
 """
         )
         file.write("<ul>\n")
@@ -290,6 +300,7 @@ This page contains an overview over all present notes.
             fpath = fpath.replace(".md", ".html")
             file.write(f'<li><a href="{fpath}">{fname}</a></li>\n')
         file.write("</ul>\n</div>")
+        file.write(html_end)
 
 
 def convert_file(in_path, out_path, css_file_path, root_dir):
@@ -518,7 +529,8 @@ def main():
         else:
             logger.warn(f"Error watching {watch}.")
 
-    logger.info(f"Running at http://{ADDRESS}:{PORT}")
+    addr = f"http://{ADDRESS}:{PORT}"
+    logger.info(f"Running at {addr}")
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -526,6 +538,7 @@ def main():
 
     logger.debug(f"Serving directory {cfg.serve_path}")
     server = HTTPServer((ADDRESS, PORT), Handler)
+    subprocess.call(["firefox", "--new-tab", addr])
     server.serve_forever()
 
 
