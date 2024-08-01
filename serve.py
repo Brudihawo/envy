@@ -223,7 +223,7 @@ This page contains an overview over all present notes.
 """
         )
 
-        for fname in sorted(f for f in files if f.endswith(".md") and "papers" in f):
+        for fname in sorted(f for f in files if f.endswith(".md") and os.path.relpath(f, root_dir).startswith("papers")):
             meta = get_paper_meta(fname)
             if meta is not None:
                 try:
@@ -255,7 +255,7 @@ This page contains an overview over all present notes.
             fname = os.path.basename(fname).replace(".md", "")
             fpath = fpath.replace(".md", ".html")
             file.write(
-                f'<li authors="{authors}" tags="{tags}" title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
+                f'<li authors="{authors}" tags="{tags}" year={year} title="{title}"><strong>{title}</strong></br>{year}<em>{authors}</em></br><a href="{fpath}">{fname}</a></li>\n'
             )
         file.write("</ul>\n</div>")
 
