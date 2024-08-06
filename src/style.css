@@ -8,6 +8,7 @@ body {
   color: #dddddd;
   width: 75%;
   margin: auto;
+  font-family: Arial !important;
 }
 
 a {
