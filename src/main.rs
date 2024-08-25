@@ -4,7 +4,8 @@
 use axum::extract::State;
 use axum::{routing::get, Router};
 
-use envy::file_requests::{favicon, style, Envy};
+use envy::file_requests::{favicon, style};
+use envy::state::Envy;
 use tracing_subscriber;
 
 type ServerState = State<Envy>;
@@ -18,7 +19,7 @@ async fn main() {
     let app = Router::new()
         .route(
             "/",
-            get(async move |nvy: ServerState| nvy.index_page().await).with_state(envy.clone()),
+            get(async move |nvy: ServerState| nvy.index_page()).with_state(envy.clone()),
         )
         .route("/style.css", get(style))
         .route("/favicon.ico", get(favicon))
