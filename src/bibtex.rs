@@ -1,6 +1,6 @@
 use serde::{de::Visitor, Deserialize};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum EntryKind {
     Article,
     Book,
@@ -41,7 +41,7 @@ impl EntryKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BibtexEntry {
     pub kind: EntryKind,
     pub name: String,

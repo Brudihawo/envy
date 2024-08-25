@@ -4,21 +4,21 @@ use std::path::PathBuf;
 use crate::bibtex::BibtexEntry;
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct PaperMeta {
     pub tags: Option<Vec<String>>,
     pub bibtex: BibtexEntry,
     pub pdf: PathBuf,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FileContents {
     PaperNote { content: String },
     General { content: String },
     Pdf { bytes: Vec<u8> },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct File {
     pub modified: std::time::SystemTime,
     pub path: std::path::PathBuf,
