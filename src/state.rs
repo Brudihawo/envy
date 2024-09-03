@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
@@ -8,7 +9,7 @@ use axum::response::IntoResponse;
 use tokio::io::AsyncReadExt;
 
 use crate::file::File;
-use crate::file_requests::{file_error_page, file_or_err_page, get_md, MATHJAX_URI, NOTES_PATH, note_page};
+use crate::file_requests::{file_error_page, file_or_err_page, get_md, note_page, NOTES_PATH};
 
 macro_rules! serve_font {
     ($font_name:literal, $identifier:ident, $mtype:ident) => {
@@ -24,63 +25,10 @@ macro_rules! serve_font {
     };
 }
 
+type NoteMap = HashMap<String, File>;
 #[derive(Clone)]
 pub struct Envy {
-    notes: Arc<Mutex<Notes>>,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum NoteType {
-    Paper,
-    Daily,
-    Other,
-}
-
-type NoteMap = HashMap<String, File>;
-
-#[derive(Default, Debug)]
-pub struct Notes {
-    pub papers: NoteMap,
-    pub daily: NoteMap,
-    pub other: NoteMap,
-}
-
-impl std::ops::Index<NoteType> for Notes {
-    type Output = NoteMap;
-
-    fn index(&self, index: NoteType) -> &Self::Output {
-        use NoteType::*;
-        match index {
-            Paper => &self.papers,
-            Daily => &self.daily,
-            Other => &self.other,
-        }
-    }
-}
-
-impl std::ops::IndexMut<NoteType> for Notes {
-    fn index_mut(&mut self, index: NoteType) -> &mut Self::Output {
-        use NoteType::*;
-        match index {
-            Paper => &mut self.papers,
-            Daily => &mut self.daily,
-            Other => &mut self.other,
-        }
-    }
-}
-
-pub fn tags_arr(in_tags: &[String]) -> String {
-    let mut tags = String::from("[");
-
-    for (i, tag) in in_tags.iter().enumerate() {
-        if i > 0 {
-            tags.push_str(",");
-        }
-        tags.push_str(tag);
-    }
-    tags.push_str("]");
-
-    tags
+    notes: Arc<Mutex<HashMap<String, NoteMap>>>,
 }
 
 impl Envy {
@@ -98,53 +46,33 @@ impl Envy {
                     false
                 }
             })
-            .map(|e| async move {
-                // TODO handle pdfs
-                let file = tokio::fs::File::open(e.path()).await.expect("file exists");
-                let metadata = file.metadata().await.expect("file has readable metadata");
-                File {
-                    modified: metadata.modified().expect("fstat is available"),
-                    path: e.path().to_path_buf(),
-                    loaded_content: None,
-                    meta: None,
-                }
-            });
+            .map(|e| async move { File::new(e.path().to_string_lossy().to_string()) });
 
-        let mut notes: Notes = Notes::default();
+        let mut notes: HashMap<String, NoteMap> = HashMap::new();
         for file in files {
-            let file = file.await;
+            let file = file.await.await;
             let parent = file
                 .path
                 .parent()
-                .expect("must have at least parent of note folder")
-                .file_name()
-                .expect("parent folder has file name")
-                .to_str()
-                .expect("parent is convertible to str");
+                .expect("we should not be running on '/'")
+                .to_string_lossy()
+                .to_string();
 
-            let note_type: NoteType = match parent {
-                "papers" => NoteType::Paper,
-                "daily" => NoteType::Daily,
-                _ => NoteType::Other,
-            };
-
-            if let Some(note) = notes[note_type].get_mut(file.path.to_str().unwrap()) {
-                if note.modified < file.modified {
-                    use NoteType::*;
-                    match note_type {
-                        Paper => *note = file.with_meta(),
-                        Daily | Other => *note = file.clone(),
+            if let Some(sub_notes) = notes.get_mut(&parent) {
+                let note_path = file.path.to_str().expect("note path is convertible to str");
+                if let Some(note) = sub_notes.get_mut(note_path) {
+                    if note.modified < file.modified {
+                        *note = file;
                     }
+                } else {
+                    sub_notes.insert(file.path.to_str().unwrap().to_string(), file);
                 }
             } else {
-                use NoteType::*;
-                notes[note_type].insert(
-                    file.path.to_str().unwrap().to_string(),
-                    match note_type {
-                        Paper => file.with_meta(),
-                        Daily | Other => file.clone(),
-                    },
-                );
+                notes.insert(parent.clone(), HashMap::new());
+                notes
+                    .get_mut(&parent)
+                    .expect("we just inserted this")
+                    .insert(file.path.to_str().unwrap().to_string(), file);
             }
         }
 
@@ -179,13 +107,6 @@ impl Envy {
         if p.ends_with(".md") {
             return get_md(path).await;
         }
-        if p == "/script.js" {
-            let file_contents = include_str!("script.js");
-            let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
-            return Ok((headers, file_contents).into_response());
-        }
-
         if p == "/vendor/mathjax/tex-chtml.js" {
             let file_contents = include_str!("../vendor/mathjax/tex-chtml.js");
             let mut headers = HeaderMap::new();
@@ -238,60 +159,61 @@ impl Envy {
         Err("Invalid File".into_response())
     }
 
-    pub fn index_page(&self) -> impl IntoResponse {
-        let mut papers = String::new();
+    pub fn render_index_page(&self) -> impl IntoResponse {
+        let mut page = String::new();
+        let notes = self.notes.lock().unwrap();
+        let _ = writeln!(&mut page, "<div class='tabbed'>");
+        let mut first = true;
+        let keys_w_display: Vec<_> = notes
+            .iter()
+            .map(|(path, _)| path)
+            .sorted()
+            .map(|parent| {
+                let mut nice_parent = parent.strip_prefix(NOTES_PATH).unwrap().to_string();
+                nice_parent = nice_parent.trim_start_matches('/').to_string();
+                if nice_parent.is_empty() {
+                    nice_parent.push_str("Root")
+                }
 
-        papers.push_str("<h2>Paper Notes</h2>\n");
-        papers.push_str("<input type=\"text\" id=\"paper_search\" onkeyup=\"filter_list('papers', 'paper_search')\" placeholder=\"Search Tags or Names\">\n");
-        papers.push_str(
-            "<div style=\"height:50vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n",
-        );
-        papers.push_str("<ul id='papers'>");
-        for (_path, paper) in self.notes.lock().unwrap().papers.iter() {
-            let meta = &paper.meta.as_ref().unwrap();
-            let tags = if let Some(ref t) = meta.tags {
-                tags_arr(t)
-            } else {
-                String::from("[]")
-            };
-
-            let _ = write!(&mut papers, "<li authors=\"{authors}\" tags=\"{tags}\" title=\"{title}\"><strong>{title}</strong></br>{year} <em>{authors}</em></br><a href=\"{path}\">{fname}</a></li>", 
-            title=meta.bibtex.title,
-            authors=meta.bibtex.author,
-            year=meta.bibtex.year,
-            path=paper.path.strip_prefix(NOTES_PATH).unwrap().display(),
-            fname=paper.path.file_name().unwrap().to_str().unwrap());
+                (parent, nice_parent)
+            })
+            .collect();
+        let _ = writeln!(&mut page, "<div id='tabbed-radios'>");
+        for (parent, _) in keys_w_display.iter() {
+            let _ = writeln!(
+                &mut page,
+                "<input type='radio' id='{parent}-radio' name='tabs' onclick='update_radios()' parent='{parent}' {chk}>",
+                chk = if first { "checked" } else { "" }
+            );
+            first = false;
         }
-        papers.push_str("</ul>\n</div>\n");
-        papers.push_str("<h2>Daily Notes</h2>");
-        papers.push_str(
-            "<div style=\"height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n",
-        );
-        papers.push_str("<ul class=\"mcol_ul\" id=\"daily\">\n");
+        let _ = writeln!(&mut page, "</div>");
 
-        for (_path, note) in self.notes.lock().unwrap().daily.iter() {
-            let _ = write!(
-                &mut papers,
-                "<li><a href=\"{}\">{}</a></li>",
-                note.path.strip_prefix(NOTES_PATH).unwrap().display(),
-                note.path.file_name().unwrap().to_str().unwrap()
+        let _ = writeln!(&mut page, "<span class='title'><a class='site_icon' href=\"/\"><img width=\"48\" height=\"48\" src=\"/favicon.ico\"></a>");
+        let _ = writeln!(&mut page, "<ul class='tabs'>");
+        for (parent, nice_parent) in keys_w_display.iter() {
+            let _ = writeln!(
+                &mut page,
+                "<li class='tab' id='{parent}-tab'><label for='{parent}-radio'><strong>{nice_parent}</strong></label></li>",
             );
         }
-        papers.push_str("</ul>\n</div>");
-        papers.push_str("<h2>Other Notes</h2>");
-        papers.push_str(
-            "<div style=\"height:10vh;width:100%;overflow:scroll;auto;padding-top:10px;\">\n",
-        );
-        papers.push_str("<ul class=\"mcol_ul\" id=\"daily\">\n");
-        for (_path, note) in self.notes.lock().unwrap().other.iter() {
-            let _ = write!(
-                &mut papers,
-                "<li><a href=\"{}\">{}</a></li>",
-                note.path.strip_prefix(NOTES_PATH).unwrap().display(),
-                note.path.file_name().unwrap().to_str().unwrap()
-            );
+        let _ = writeln!(&mut page, "</ul></span>");
+
+        for (parent, _) in keys_w_display.iter() {
+            let note_map = notes.get(*parent).expect("we use the keys we got before");
+            let _ = writeln!(&mut page, "<div class='tab-content' id='{parent}-content' parent='{parent}'>");
+            let _ = writeln!(&mut page, "  <ul id='{parent}-ul'>");
+
+            for (_path, note) in note_map.iter().sorted_by_key(|&(path, _)| path) {
+                let _ = write!(&mut page, "    ");
+                note.write_index_entry(&mut page, NOTES_PATH);
+            }
+
+            let _ = writeln!(&mut page, "  </ul>");
+            let _ = writeln!(&mut page, "</div>");
         }
-        papers.push_str("</ul>\n</div>");
-        note_page("Envy - Note Viewer", "", &papers)
+        let _ = writeln!(&mut page, "</div>");
+
+        note_page("Envy - Note Viewer", "", &page)
     }
 }

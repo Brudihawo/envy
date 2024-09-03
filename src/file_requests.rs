@@ -10,7 +10,6 @@ pub const MATHJAX_CFG: &'static str = include_str!("./mathjax_cfg.js");
 pub const MATHJAX_URI: &'static str = "/vendor/mathjax/tex-chtml.js";
 pub const NOTES_PATH: &'static str = "/home/hawo/notes";
 
-
 pub fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
     format!(
         "<!DOCTYPE html>
@@ -26,6 +25,7 @@ pub fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
 <body>
 {body_pre}
 {body}
+<script type='text/javascript'>update_tab_display();</script>
 </body>
 </html>"
     )
@@ -167,5 +167,11 @@ pub async fn favicon() -> impl IntoResponse {
     (headers, bytes)
 }
 
-pub async fn serve_fonts() -> impl IntoResponse {
+pub async fn script() -> Result<Response<Body>, Body> {
+    let file_contents = include_str!("script.js");
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
+    Ok((headers, file_contents).into_response())
 }
+
+pub async fn serve_fonts() -> impl IntoResponse {}
