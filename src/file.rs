@@ -78,6 +78,43 @@ impl File {
             let _ = writeln!(page, "<li><a href='{path}'>{fname}</a></li>");
         }
     }
+
+    pub fn matches_any(&self, any: &str, prefix: &str) -> u32 {
+        let mut match_case = false;
+        for c in any.chars() {
+            if c.is_uppercase() {
+                match_case = true;
+            }
+        }
+        let any_lower = any.to_lowercase();
+        let any = if !match_case { &any_lower } else { any };
+
+        let mut score: u32 = 0;
+        if let Some(meta) = &self.meta {
+            if match_case {
+                score += meta.bibtex.name.contains(any) as u32;
+                score += (meta.bibtex.year == any) as u32 * 5;
+                score += meta.bibtex.title.contains(any) as u32 * 2;
+                score += meta.bibtex.author.contains(any) as u32 * 2;
+            } else {
+                score += meta.bibtex.name.to_lowercase().contains(any) as u32;
+                score += (meta.bibtex.year == any) as u32 * 5;
+                score += meta.bibtex.title.to_lowercase().contains(any) as u32 * 2;
+                score += meta.bibtex.author.to_lowercase().contains(any) as u32 * 2;
+            }
+        }
+
+        score += self
+            .path
+            .strip_prefix(prefix)
+            .unwrap()
+            .to_str()
+            .expect("path is valid unicode")
+            .contains(any) as u32
+            * 3;
+
+        return score;
+    }
 }
 
 pub fn tags_arr(in_tags: &[String]) -> String {

@@ -32,6 +32,55 @@ function filter_list(list_id, query_id) {
   }
 }
 
+function open_search() {
+  let search_parent = document.getElementById("search_parent");
+  search_parent.style.display = "block";
+  document.getElementById('search_input').focus();
+}
+
+function close_search() {
+  let search_parent = document.getElementById("search_parent");
+  search_parent.style.display = "none";
+}
+
+
+function process_up(e) {
+  if (e.key == "k" && e.ctrlKey) {
+    e.preventDefault();
+
+    console.log("Pressed Ctrl-K")
+  }
+}
+
+function process_down(e) {
+  if (e.key === "k" && e.ctrlKey) {
+    e.preventDefault();
+    let search_parent = document.getElementById("search_parent");
+    if (search_parent.style.display === "none") {
+      open_search();
+    } else {
+      close_search();
+    }
+    return;
+  }
+
+  if (e.key === "Escape") {
+    close_search();
+    e.preventDefault();
+    return
+  }
+
+}
+
+async function update_search() {
+  let search_input = document.getElementById('search_input').value;
+  let url = window.location.origin + "/api?any=" + search_input;
+  console.log(url);
+  let response = await fetch(url).then((res) => res.text());
+  let res_div = document.getElementById("search_res_div");
+  res_div.innerHTML = response;
+}
+
 function get_cookie(cname) {
   let name = cname + "=";
   let decoded_cookie = decodeURIComponent(document.cookie);

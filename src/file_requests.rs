@@ -25,7 +25,12 @@ pub fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
 <body>
 {body_pre}
 {body}
-<script type='text/javascript'>update_tab_display();</script>
+<div id='search_parent' class='search'><div class='cover'></div><div class='search_in'><input id='search_input' type='text' onkeyup='update_search()' placeholder='search...'/><div id='search_res_div' class='search_res'></div></div></div>
+<script type='text/javascript'>
+    update_tab_display();
+    document.addEventListener('keydown', process_down, false);
+    document.addEventListener('keyup', process_up, false);
+</script>
 </body>
 </html>"
     )

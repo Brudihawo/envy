@@ -1,3 +1,4 @@
+use axum::extract::State;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -10,6 +11,8 @@ use tokio::io::AsyncReadExt;
 
 use crate::file::File;
 use crate::file_requests::{file_error_page, file_or_err_page, get_md, note_page, NOTES_PATH};
+
+pub type ServerState = State<Envy>;
 
 macro_rules! serve_font {
     ($font_name:literal, $identifier:ident, $mtype:ident) => {
@@ -79,6 +82,34 @@ impl Envy {
         Envy {
             notes: Arc::new(Mutex::new(notes)),
         }
+    }
+
+    pub fn query_any(&self, any: &str) -> Option<Vec<(u32, String)>> {
+        if any.is_empty() {
+            return None;
+        };
+
+        Some(
+            self.notes
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, h)| h.iter())
+                .flatten()
+                .filter_map(|(_path, file)| {
+                    let score = file.matches_any(any, NOTES_PATH);
+                    if score > 0 {
+                        let mut s = String::new();
+                        file.write_index_entry(&mut s, NOTES_PATH);
+                        println!("{:?} matches '{any}'", file.path);
+                        Some((score, s))
+                    } else {
+                        None
+                    }
+                })
+                .sorted_by_key(|(score, _)| *score)
+                .collect(),
+        )
     }
 
     async fn get_pdf(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
@@ -201,7 +232,10 @@ impl Envy {
 
         for (parent, _) in keys_w_display.iter() {
             let note_map = notes.get(*parent).expect("we use the keys we got before");
-            let _ = writeln!(&mut page, "<div class='tab-content' id='{parent}-content' parent='{parent}'>");
+            let _ = writeln!(
+                &mut page,
+                "<div class='tab-content' id='{parent}-content' parent='{parent}'>"
+            );
             let _ = writeln!(&mut page, "  <ul id='{parent}-ul'>");
 
             for (_path, note) in note_map.iter().sorted_by_key(|&(path, _)| path) {
