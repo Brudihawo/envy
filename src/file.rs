@@ -58,24 +58,25 @@ impl File {
         ret
     }
 
-    pub fn write_index_entry(&self, page: &mut impl Write, base: &str) {
+    pub fn write_index_entry(&self, page: &mut impl Write, base: &str, with_parent: bool) {
         let meta = self.meta.as_ref();
         let fname = self.path.file_name().unwrap().to_str().unwrap();
         let path = self.path.strip_prefix(base).unwrap().display();
 
+        let dpath = if with_parent {
+            path.to_string()
+        } else {
+            fname.to_string()
+        };
+
         if let Some(meta) = meta {
-            let tags = if let Some(ref t) = meta.tags {
-                tags_arr(t)
-            } else {
-                String::from("[]")
-            };
-            let _ = writeln!(page, "<li authors=\"{authors}\" tags=\"{tags}\" title=\"{title}\"><strong>{title}</strong><br/>{year} <em>{authors}</em><br/><a href=\"{path}\">{fname}</a></li>", 
+            let _ = writeln!(page, "<li><strong>{title}</strong><br/>{year} <em>{authors}</em><br/><a href=\"/{path}\">{dpath}</a></li>", 
                         title=meta.bibtex.title,
                         authors=meta.bibtex.author,
                         year=meta.bibtex.year,
                     );
         } else {
-            let _ = writeln!(page, "<li><a href='{path}'>{fname}</a></li>");
+            let _ = writeln!(page, "<li><a href='/{path}'>{dpath}</a></li>",);
         }
     }
 

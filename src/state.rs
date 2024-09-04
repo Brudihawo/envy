@@ -100,7 +100,7 @@ impl Envy {
                     let score = file.matches_any(any, NOTES_PATH);
                     if score > 0 {
                         let mut s = String::new();
-                        file.write_index_entry(&mut s, NOTES_PATH);
+                        file.write_index_entry(&mut s, NOTES_PATH, true);
                         println!("{:?} matches '{any}'", file.path);
                         Some((score, s))
                     } else {
@@ -240,7 +240,7 @@ impl Envy {
 
             for (_path, note) in note_map.iter().sorted_by_key(|&(path, _)| path) {
                 let _ = write!(&mut page, "    ");
-                note.write_index_entry(&mut page, NOTES_PATH);
+                note.write_index_entry(&mut page, NOTES_PATH, false);
             }
 
             let _ = writeln!(&mut page, "  </ul>");

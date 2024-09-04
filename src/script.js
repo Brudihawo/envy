@@ -36,6 +36,7 @@ function open_search() {
   let search_parent = document.getElementById("search_parent");
   search_parent.style.display = "block";
   document.getElementById('search_input').focus();
+  document.getElementById('search_input').select();
 }
 
 function close_search() {
@@ -56,10 +57,10 @@ function process_down(e) {
   if (e.key === "k" && e.ctrlKey) {
     e.preventDefault();
     let search_parent = document.getElementById("search_parent");
-    if (search_parent.style.display === "none") {
-      open_search();
-    } else {
+    if (search_parent.style.display === "block") {
       close_search();
+    } else {
+      open_search();
     }
     return;
   }
