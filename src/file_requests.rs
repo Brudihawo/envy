@@ -179,4 +179,3 @@ pub async fn script() -> Result<Response<Body>, Body> {
     Ok((headers, file_contents).into_response())
 }
 
-pub async fn serve_fonts() -> impl IntoResponse {}

@@ -2,6 +2,7 @@ use axum::extract::State;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -29,9 +30,33 @@ macro_rules! serve_font {
 }
 
 type NoteMap = HashMap<String, File>;
-#[derive(Clone)]
 pub struct Envy {
     notes: Arc<Mutex<HashMap<String, NoteMap>>>,
+}
+
+impl Clone for Envy {
+    fn clone(&self) -> Self {
+        return Envy {
+            notes: Arc::clone(&self.notes),
+        };
+    }
+}
+
+fn get_top_parent(path: &Path) -> String {
+    path.strip_prefix(NOTES_PATH)
+        .expect("we are searching the note path")
+        .ancestors()
+        .take_while(|x| !x.to_str().unwrap().is_empty())
+        .last()
+        .map(|a| a.to_string_lossy().to_string())
+        .map(|a| {
+            if a == path.file_name().unwrap().to_str().unwrap() {
+                "Root".to_string()
+            } else {
+                a
+            }
+        })
+        .unwrap_or("Root".to_string())
 }
 
 impl Envy {
@@ -49,18 +74,12 @@ impl Envy {
                     false
                 }
             })
-            .map(|e| async move { File::new(e.path().to_string_lossy().to_string()) });
+            .map(|e| async move { File::new(e.path().to_string_lossy().to_string()).await });
 
         let mut notes: HashMap<String, NoteMap> = HashMap::new();
         for file in files {
-            let file = file.await.await;
-            let parent = file
-                .path
-                .parent()
-                .expect("we should not be running on '/'")
-                .to_string_lossy()
-                .to_string();
-
+            let file = file.await;
+            let parent = get_top_parent(&file.path);
             if let Some(sub_notes) = notes.get_mut(&parent) {
                 let note_path = file.path.to_str().expect("note path is convertible to str");
                 if let Some(note) = sub_notes.get_mut(note_path) {
@@ -101,7 +120,6 @@ impl Envy {
                     if score > 0 {
                         let mut s = String::new();
                         file.write_index_entry(&mut s, NOTES_PATH, true);
-                        println!("{:?} matches '{any}'", file.path);
                         Some((score, s))
                     } else {
                         None
@@ -110,6 +128,35 @@ impl Envy {
                 .sorted_by_key(|(score, _)| *score)
                 .collect(),
         )
+    }
+
+    pub async fn update_file(&mut self, path: &Path) {
+        let parent = get_top_parent(path);
+        if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&parent) {
+            if let Some(n) = sub_notes.get_mut(path.to_str().expect("path is utf8")) {
+                *n = File::new(path).await
+            }
+        }
+    }
+
+    pub async fn move_file(&mut self, from: &Path, to: &Path) {
+        if from.extension().unwrap() != "md" {
+            return;
+        }
+
+        let from_parent = get_top_parent(from);
+        if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&from_parent) {
+            sub_notes.remove(from.to_str().expect("path is utf8"));
+        }
+
+        let to_parent = get_top_parent(to);
+        if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&to_parent) {
+            sub_notes.insert(
+                to.to_str().expect("path is utf8").to_string(),
+                File::new(to).await,
+            );
+        } else {
+        }
     }
 
     async fn get_pdf(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
@@ -195,22 +242,10 @@ impl Envy {
         let notes = self.notes.lock().unwrap();
         let _ = writeln!(&mut page, "<div class='tabbed'>");
         let mut first = true;
-        let keys_w_display: Vec<_> = notes
-            .iter()
-            .map(|(path, _)| path)
-            .sorted()
-            .map(|parent| {
-                let mut nice_parent = parent.strip_prefix(NOTES_PATH).unwrap().to_string();
-                nice_parent = nice_parent.trim_start_matches('/').to_string();
-                if nice_parent.is_empty() {
-                    nice_parent.push_str("Root")
-                }
+        let keys: Vec<_> = notes.iter().map(|(path, _)| path).sorted().collect();
 
-                (parent, nice_parent)
-            })
-            .collect();
         let _ = writeln!(&mut page, "<div id='tabbed-radios'>");
-        for (parent, _) in keys_w_display.iter() {
+        for parent in keys.iter() {
             let _ = writeln!(
                 &mut page,
                 "<input type='radio' id='{parent}-radio' name='tabs' onclick='update_radios()' parent='{parent}' {chk}>",
@@ -222,15 +257,15 @@ impl Envy {
 
         let _ = writeln!(&mut page, "<span class='title'><a class='site_icon' href=\"/\"><img width=\"48\" height=\"48\" src=\"/favicon.ico\"></a>");
         let _ = writeln!(&mut page, "<ul class='tabs'>");
-        for (parent, nice_parent) in keys_w_display.iter() {
+        for parent in keys.iter() {
             let _ = writeln!(
                 &mut page,
-                "<li class='tab' id='{parent}-tab'><label for='{parent}-radio'><strong>{nice_parent}</strong></label></li>",
+                "<li class='tab' id='{parent}-tab'><label for='{parent}-radio'><strong>{parent}</strong></label></li>",
             );
         }
         let _ = writeln!(&mut page, "</ul></span>");
 
-        for (parent, _) in keys_w_display.iter() {
+        for parent in keys.iter() {
             let note_map = notes.get(*parent).expect("we use the keys we got before");
             let _ = writeln!(
                 &mut page,
