@@ -69,6 +69,8 @@ def open_today(daily_path: str, root_path: str):
 
     symlink_path = os.path.join(daily_path, "today.md")
     print(f"linking '{fname}' to '{symlink_path}'")
+    if os.path.exists(symlink_path):
+        os.unlink(symlink_path)
     os.symlink(fname, symlink_path)
     open_in_editor(fname)
 
