@@ -32,8 +32,15 @@ function filter_list(list_id, query_id) {
   }
 }
 
-function open_search() {
+function open_search(full_text) {
   let search_parent = document.getElementById("search_parent");
+  let search_title = document.getElementById('h_search_head');
+  if (full_text) {
+    search_title.innerHTML = "Full Text Search";
+  } else {
+    search_title.innerHTML = "Metadata Search";
+  }
+  search_parent.setAttribute("full_text", true);
   search_parent.style.display = "block";
   document.getElementById('search_input').focus();
   document.getElementById('search_input').select();
@@ -42,6 +49,7 @@ function open_search() {
 function close_search() {
   let search_parent = document.getElementById("search_parent");
   search_parent.style.display = "none";
+  search_parent.removeAttribute("full_text");
 }
 
 
@@ -60,7 +68,18 @@ function process_down(e) {
     if (search_parent.style.display === "block") {
       close_search();
     } else {
-      open_search();
+      open_search(false);
+    }
+    return;
+  }
+
+  if (e.key === "m" && e.ctrlKey) {
+    e.preventDefault();
+    let search_parent = document.getElementById("search_parent");
+    if (search_parent.style.display === "block") {
+      close_search();
+    } else {
+      open_search(true);
     }
     return;
   }
@@ -74,8 +93,11 @@ function process_down(e) {
 }
 
 async function update_search() {
+  let search_parent = document.getElementById('search_parent');
   let search_input = document.getElementById('search_input').value;
-  let url = window.location.origin + "/api?any=" + search_input;
+  let full_text = search_parent.getAttribute("full_text");
+  let api = full_text ? "fulltext" : "meta";
+  let url = window.location.origin + "/api/" + api + "?any=" + search_input;
   console.log(url);
   let response = await fetch(url).then((res) => res.text());
   let res_div = document.getElementById("search_res_div");

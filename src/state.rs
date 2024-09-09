@@ -12,6 +12,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::file::File;
 use crate::file_requests::{file_error_page, file_or_err_page, get_md, note_page, NOTES_PATH};
+use crate::file_tokenizer::Lexer;
 
 pub type ServerState = State<Envy>;
 
@@ -80,6 +81,7 @@ impl Envy {
         for file in files {
             let file = file.await;
             let parent = get_top_parent(&file.path);
+
             if let Some(sub_notes) = notes.get_mut(&parent) {
                 let note_path = file.path.to_str().expect("note path is convertible to str");
                 if let Some(note) = sub_notes.get_mut(note_path) {
@@ -103,7 +105,59 @@ impl Envy {
         }
     }
 
-    pub fn query_any(&self, any: &str) -> Option<Vec<(u32, String)>> {
+    pub fn query_fulltext(&self, text_query: &str) -> Option<Vec<(f64, String)>> {
+        let mut file_scores = HashMap::new();
+        let tokens = Lexer::new(text_query).collect_vec();
+        let notes = self.notes.lock().unwrap();
+        let num_docs = notes.iter().count();
+
+        let idf_map: HashMap<_, _> = tokens
+            .iter()
+            .map(|token| {
+                let idf = (num_docs as f64 + 1.0)
+                    / (notes
+                        .iter()
+                        .map(|(_, h)| h.iter())
+                        .flatten()
+                        .filter_map(|(_, file)| file.tf_map.get(*token))
+                        .count() as f64
+                        + 1.0);
+                (*token, idf)
+            })
+            .collect();
+
+        for (path, file) in notes.iter().map(|(_, h)| h.iter()).flatten() {
+            let mut score = 0.0;
+            for token in tokens.iter() {
+                let tf = *file.tf_map.get(*token).unwrap_or(&0) as f64 / file.num_words as f64;
+                let idf = idf_map[token];
+                score += tf * idf;
+            }
+            file_scores.insert(file, score);
+        }
+
+        let res = file_scores
+                .iter()
+                .sorted_by(|(_, sa), (_, sb)| sa.partial_cmp(sb).unwrap())
+                .filter_map(|(file, score)| {
+                    if *score > 0.0 {
+                        let mut s = String::new();
+                        file.write_index_entry(&mut s, NOTES_PATH, true);
+                        Some((*score, s))
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec();
+
+        if res.len() == 0 {
+            return None;
+        }
+
+        Some(res)
+    }
+
+    pub fn query_any(&self, any: &str) -> Option<Vec<(f64, String)>> {
         if any.is_empty() {
             return None;
         };
@@ -120,12 +174,12 @@ impl Envy {
                     if score > 0 {
                         let mut s = String::new();
                         file.write_index_entry(&mut s, NOTES_PATH, true);
-                        Some((score, s))
+                        Some((score as f64, s))
                     } else {
                         None
                     }
                 })
-                .sorted_by_key(|(score, _)| *score)
+                .sorted_by(|(sa, _), (sb, _)| sa.partial_cmp(sb).unwrap())
                 .collect(),
         )
     }

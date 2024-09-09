@@ -3,7 +3,9 @@ use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use crate::bibtex::BibtexEntry;
+use crate::file_tokenizer::Lexer;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct PaperMeta {
@@ -13,49 +15,70 @@ pub struct PaperMeta {
 }
 
 #[derive(Clone, Debug)]
-pub enum FileContents {
-    PaperNote { content: String },
-    General { content: String },
-    Pdf { bytes: Vec<u8> },
-}
-
-#[derive(Clone, Debug)]
 pub struct File {
     pub modified: std::time::SystemTime,
     pub path: std::path::PathBuf,
-    pub loaded_content: Option<FileContents>,
+    pub content: String,
+    pub num_words: usize,
+    pub tf_map: HashMap<String, usize>,
     pub meta: Option<PaperMeta>,
+}
+
+impl PartialEq for File {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.modified == other.modified
+    }
+}
+
+impl Eq for File { }
+
+impl std::hash::Hash for File {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write(self.path.as_os_str().to_str().unwrap().as_bytes());
+        self.modified.hash(state)
+    }
 }
 
 impl File {
     pub async fn new(path: impl AsRef<Path>) -> Self {
         let file = tokio::fs::File::open(&path).await.expect("file exists");
         let metadata = file.metadata().await.expect("file has readable metadata");
-        let mut ret = Self {
-            path: path.as_ref().to_path_buf(),
-            modified: metadata.modified().expect("can get mtime"),
-            loaded_content: None,
-            meta: None,
-        };
 
-        let mut contents = String::new();
-        BufReader::new(std::fs::File::open(&ret.path).unwrap())
-            .read_to_string(&mut contents)
+        let mut content = String::new();
+        BufReader::new(std::fs::File::open(&path).unwrap())
+            .read_to_string(&mut content)
             .unwrap();
 
-        if contents.starts_with("---") {
+        let meta = if content.starts_with("---") {
             // has yaml frontmatter
             // try to find end of frontmatter
-            let mut parts = contents.split("---\n");
+            let mut parts = content.split("---\n");
             let _empty = parts.next().expect("metadata is present");
             // TODO: handle empty metadata
             let meta = parts.next().expect("metadata is present");
             let meta: PaperMeta = serde_yaml::from_str(meta).expect("Parseable Metadata");
-            ret.meta = Some(meta);
+            Some(meta)
         } else {
-            ret.meta = None
+            None
+        };
+
+        let mut tf_map = HashMap::new();
+        let f = tokio::fs::read_to_string(&path).await.unwrap();
+        for token in Lexer::new(&f) {
+            tf_map
+                .entry(token.to_lowercase())
+                .and_modify(|i| *i += 1)
+                .or_insert(1);
         }
-        ret
+
+        Self {
+            path: path.as_ref().to_path_buf(),
+            modified: metadata.modified().expect("can get mtime"),
+            content,
+            num_words: tf_map.iter().map(|(_, count)| count).sum(),
+            tf_map,
+            meta,
+        }
     }
 
     pub fn write_index_entry(&self, page: &mut impl Write, base: &str, with_parent: bool) {

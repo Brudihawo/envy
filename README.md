@@ -12,10 +12,6 @@ Clone this repo, `cd` into it, create a virtual environment and install the depe
 ```commandline
 $ git clone https://github.com/Brudihawo/envy.git
 $ cd envy
-$ python -m virtualenv venv
-$ source ./venv/bin/activate
-$ pip install -r requirements.txt
 $ ./init.sh
+$ cargo run
 ```
-
-

@@ -94,8 +94,17 @@ a:hover {
   background: #181818ff;
 }
 
-.search_in > input {
-  margin-top: 1em;
+.search_head {
+  display: flex;
+  justify-content: top;
+  flex-direction: row;
+  align-items: center;
+}
+
+
+.search_head > input {
+  margin-left: 1em;
+  margin-top: 0em;
   color: #f00;
 }
 
