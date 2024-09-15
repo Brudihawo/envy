@@ -54,10 +54,18 @@ impl File {
             // try to find end of frontmatter
             let mut parts = content.split("---\n");
             let _empty = parts.next().expect("metadata is present");
-            // TODO: handle empty metadata
             let meta = parts.next().expect("metadata is present");
-            let meta: PaperMeta = serde_yaml::from_str(meta).expect("Parseable Metadata");
-            Some(meta)
+            let meta: Option<PaperMeta> = serde_yaml::from_str(meta)
+                .map_err(|err| {
+                    // TODO: proper logging
+                    eprintln!(
+                        "Invalid Metadata in {path}: '{err}'",
+                        path = path.as_ref().display()
+                    );
+                    ()
+                })
+                .ok();
+            meta
         } else {
             None
         };
