@@ -68,7 +68,7 @@ pub fn new_paper(root: &str, location: &str) -> Result<PathBuf, String> {
         file,
         r#"---
 bibtex: "{entry}"
-file: "./doc/{name}.pdf"
+pdf: "./doc/{name}.pdf"
 tags: [unread]
 ---
 
