@@ -2,7 +2,7 @@ use axum::http::Uri;
 use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use clap::{Parser, Subcommand};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use envy::api::{query_fulltext, query_meta};
 use envy::file_requests::{favicon, script, style};
@@ -37,9 +37,53 @@ enum Action {
         long_about = "create a new note in '<notes_root>/<location>/' with bibtex info in system clipboard"
     )]
     NewPaper {
-        #[arg(long, short, help = "relative path for new-paper note location")]
+        #[arg(long, short, help = "relative path for new-paper note location",
+              default_value_t=String::from("papers"))]
         location: String,
     },
+}
+
+pub fn new_paper(root: &str, location: &str) -> Result<PathBuf, String> {
+    use std::io::{BufWriter, Write};
+    let clip =
+        cli_clipboard::get_contents().map_err(|err| format!("Failed to get clipboard: {err}"))?;
+
+    let entry = envy::bibtex::BibtexEntry::try_from_str(&clip)
+        .map_err(|err| format!("Failed to parse bibtex entry: {err}"))?;
+
+    let path = Path::new(root)
+        .join(location)
+        .join(format!("{name}.md", name = entry.name));
+
+    let mut file = std::fs::File::create_new(&path)
+        .map(|f| BufWriter::new(f))
+        .map_err(|err| {
+            format!(
+                "Failed to create file '{path}': {err}",
+                path = path.display()
+            )
+        })?;
+
+    let _ = write!(
+        file,
+        r#"---
+bibtex: "{entry}"
+file: "./doc/{name}.pdf"
+tags: [unread]
+---
+
+# {title}"#,
+        name = entry.name,
+        title = entry.title
+    )
+    .map_err(|err| {
+        format!(
+            "could not write to file: '{path}': {err}",
+            path = path.display()
+        )
+    })?;
+
+    Ok(path)
 }
 
 #[derive(Parser)]
@@ -79,7 +123,25 @@ pub fn main() {
                     println!("{}", entry)
                 }
             }),
-        Action::NewPaper { location } => todo!(),
+        Action::NewPaper { location } => {
+            let created_file = new_paper(&args.notes_root, &location)
+                .map_err(|err| {
+                    eprintln!("Could not create new paper note: {err}");
+                    std::process::exit(1);
+                })
+                .unwrap();
+            let editor = std::env::vars()
+                .find(|(k, _)| k == "EDITOR")
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_else(|| {
+                    eprintln!("Not opening file because $EDITOR is not set.");
+                    std::process::exit(1);
+                });
+            let _ = std::process::Command::new(editor)
+                .args(created_file.to_str())
+                .status()
+                .expect("Could not start editor");
+        }
     }
 }
 //
