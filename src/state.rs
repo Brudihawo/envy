@@ -2,7 +2,7 @@ use axum::extract::State;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -11,7 +11,7 @@ use axum::response::IntoResponse;
 use tokio::io::AsyncReadExt;
 
 use crate::file::File;
-use crate::file_requests::{file_error_page, file_or_err_page, get_md, note_page, NOTES_PATH};
+use crate::file_requests::{compile_markdown, file_error_page, file_or_err_page, note_page};
 use crate::file_tokenizer::Lexer;
 
 pub type ServerState = State<Envy>;
@@ -33,18 +33,20 @@ macro_rules! serve_font {
 type NoteMap = HashMap<String, File>;
 pub struct Envy {
     notes: Arc<Mutex<HashMap<String, NoteMap>>>,
+    root: Arc<PathBuf>,
 }
 
 impl Clone for Envy {
     fn clone(&self) -> Self {
         return Envy {
             notes: Arc::clone(&self.notes),
+            root: Arc::clone(&self.root),
         };
     }
 }
 
-fn get_top_parent(path: &Path) -> String {
-    path.strip_prefix(NOTES_PATH)
+fn get_top_parent(path: &Path, root: &impl AsRef<Path>) -> String {
+    path.strip_prefix(root)
         .expect("we are searching the note path")
         .ancestors()
         .take_while(|x| !x.to_str().unwrap().is_empty())
@@ -80,7 +82,7 @@ impl Envy {
         let mut notes: HashMap<String, NoteMap> = HashMap::new();
         for file in files {
             let file = file.await;
-            let parent = get_top_parent(&file.path);
+            let parent = get_top_parent(&file.path, path);
 
             if let Some(sub_notes) = notes.get_mut(&parent) {
                 let note_path = file.path.to_str().expect("note path is convertible to str");
@@ -102,7 +104,20 @@ impl Envy {
 
         Envy {
             notes: Arc::new(Mutex::new(notes)),
+            root: Arc::new(path.as_ref().to_owned())
         }
+    }
+
+    pub async fn get_md(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
+        let mut headers = HeaderMap::new();
+        // TODO: query file cache first
+        headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
+
+        let str_path_ = self.root.join(path.to_string());
+        let str_path = str_path_.to_str().unwrap();
+
+        let file = file_or_err_page(&str_path).await?;
+        Ok((headers, compile_markdown(file, &str_path).await).into_response())
     }
 
     pub fn query_fulltext(&self, text_query: &str) -> Option<Vec<(f64, String)>> {
@@ -137,18 +152,18 @@ impl Envy {
         }
 
         let res = file_scores
-                .iter()
-                .sorted_by(|(_, sa), (_, sb)| sa.partial_cmp(sb).unwrap())
-                .filter_map(|(file, score)| {
-                    if *score > 0.0 {
-                        let mut s = String::new();
-                        file.write_index_entry(&mut s, NOTES_PATH, true);
-                        Some((*score, s))
-                    } else {
-                        None
-                    }
-                })
-                .collect_vec();
+            .iter()
+            .sorted_by(|(_, sa), (_, sb)| sa.partial_cmp(sb).unwrap())
+            .filter_map(|(file, score)| {
+                if *score > 0.0 {
+                    let mut s = String::new();
+                    file.write_index_entry(&mut s, self.root.as_ref(), true);
+                    Some((*score, s))
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
 
         if res.len() == 0 {
             return None;
@@ -170,10 +185,10 @@ impl Envy {
                 .map(|(_, h)| h.iter())
                 .flatten()
                 .filter_map(|(_path, file)| {
-                    let score = file.matches_any(any, NOTES_PATH);
+                    let score = file.matches_any(any, self.root.as_ref());
                     if score > 0 {
                         let mut s = String::new();
-                        file.write_index_entry(&mut s, NOTES_PATH, true);
+                        file.write_index_entry(&mut s, self.root.as_ref(), true);
                         Some((score as f64, s))
                     } else {
                         None
@@ -185,7 +200,7 @@ impl Envy {
     }
 
     pub async fn update_file(&mut self, path: &Path) {
-        let parent = get_top_parent(path);
+        let parent = get_top_parent(path, self.root.as_ref());
         if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&parent) {
             if let Some(n) = sub_notes.get_mut(path.to_str().expect("path is utf8")) {
                 *n = File::new(path).await
@@ -198,12 +213,12 @@ impl Envy {
             return;
         }
 
-        let from_parent = get_top_parent(from);
+        let from_parent = get_top_parent(from, self.root.as_ref());
         if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&from_parent) {
             sub_notes.remove(from.to_str().expect("path is utf8"));
         }
 
-        let to_parent = get_top_parent(to);
+        let to_parent = get_top_parent(to, self.root.as_ref());
         if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&to_parent) {
             sub_notes.insert(
                 to.to_str().expect("path is utf8").to_string(),
@@ -217,7 +232,8 @@ impl Envy {
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, "application/pdf".parse().unwrap());
 
-        let str_path = format!("{NOTES_PATH}{str_path}", str_path = path.to_string());
+        let str_path_ = self.root.join(path.to_string());
+        let str_path = str_path_.to_str().unwrap();
 
         let mut file = file_or_err_page(&str_path).await?;
         let mut buf = Vec::new();
@@ -237,7 +253,7 @@ impl Envy {
             return self.get_pdf(path).await;
         }
         if p.ends_with(".md") {
-            return get_md(path).await;
+            return self.get_md(path).await;
         }
         if p == "/vendor/mathjax/tex-chtml.js" {
             let file_contents = include_str!("../vendor/mathjax/es5/tex-chtml.js");
@@ -329,7 +345,7 @@ impl Envy {
 
             for (_path, note) in note_map.iter().sorted_by_key(|&(path, _)| path) {
                 let _ = write!(&mut page, "    ");
-                note.write_index_entry(&mut page, NOTES_PATH, false);
+                note.write_index_entry(&mut page, self.root.as_ref(), false);
             }
 
             let _ = writeln!(&mut page, "  </ul>");

@@ -8,7 +8,6 @@ use tokio::io::AsyncReadExt;
 
 pub const MATHJAX_CFG: &'static str = include_str!("./mathjax_cfg.js");
 pub const MATHJAX_URI: &'static str = "/vendor/mathjax/tex-chtml.js";
-pub const NOTES_PATH: &'static str = "/home/hawo/notes";
 
 pub fn note_page(title: &str, body_pre: &str, body: &str) -> Html<String> {
     format!(
@@ -63,7 +62,7 @@ pub async fn file_or_err_page(path: &str) -> Result<tokio::fs::File, Response<Bo
         .map_err(|err| file_error_page("Error Opening File:", &path, err))
 }
 
-async fn compile_markdown(mut file: tokio::fs::File, fname: &str) -> Html<String> {
+pub async fn compile_markdown(mut file: tokio::fs::File, fname: &str) -> Html<String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.unwrap();
 
@@ -139,17 +138,6 @@ async fn compile_markdown(mut file: tokio::fs::File, fname: &str) -> Html<String
         ),
         &html_output,
     )
-}
-
-pub async fn get_md(path: Uri) -> Result<Response<Body>, Response<Body>> {
-    let mut headers = HeaderMap::new();
-    // TODO: query file cache first
-    headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
-
-    let str_path = format!("{NOTES_PATH}{str_path}", str_path = path.to_string());
-
-    let file = file_or_err_page(&str_path).await?;
-    Ok((headers, compile_markdown(file, &str_path).await).into_response())
 }
 
 pub async fn style() -> impl IntoResponse {

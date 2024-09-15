@@ -60,7 +60,8 @@ pub fn main() {
             .build()
             .unwrap()
             .block_on(serve(&args.notes_root)),
-        Action::Citations => todo!(),
+        Action::Citations => {
+        },
         Action::NewPaper {location}=> todo!(),
     }
 }
@@ -76,7 +77,7 @@ async fn serve(loc: &impl AsRef<Path>) {
         .expect("could not create fs watcher");
 
     watcher
-        .watch(Path::new("/home/hawo/notes"), RecursiveMode::Recursive)
+        .watch(loc.as_ref(), RecursiveMode::Recursive)
         .unwrap();
 
     let app = Router::new()

@@ -81,7 +81,7 @@ impl File {
         }
     }
 
-    pub fn write_index_entry(&self, page: &mut impl Write, base: &str, with_parent: bool) {
+    pub fn write_index_entry(&self, page: &mut impl Write, base: impl AsRef<Path>, with_parent: bool) {
         let meta = self.meta.as_ref();
         let fname = self.path.file_name().unwrap().to_str().unwrap();
         let path = self.path.strip_prefix(base).unwrap().display();
@@ -103,7 +103,7 @@ impl File {
         }
     }
 
-    pub fn matches_any(&self, any: &str, prefix: &str) -> u32 {
+    pub fn matches_any(&self, any: &str, prefix: impl AsRef<Path>) -> u32 {
         let mut match_case = false;
         for c in any.chars() {
             if c.is_uppercase() {
