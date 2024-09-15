@@ -145,12 +145,12 @@ pub async fn style() -> impl IntoResponse {
     headers.insert(header::CONTENT_TYPE, "text/css".parse().unwrap());
 
     cfg_if! {
-        if #[cfg(reload_css)] {
-            let content: str = include_str!("style.css");
-        } else {
+        if #[cfg(feature="reload_css")] {
             let mut file = tokio::fs::File::open("src/style.css").await.unwrap();
             let mut content = String::new();
             file.read_to_string(&mut content).await.unwrap();
+        } else {
+            let content: &str = include_str!("style.css");
         }
     }
 
@@ -175,4 +175,3 @@ pub async fn script() -> Result<Response<Body>, Body> {
     headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
     Ok((headers, file_contents).into_response())
 }
-
