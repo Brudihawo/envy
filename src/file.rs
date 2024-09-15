@@ -30,7 +30,7 @@ impl PartialEq for File {
     }
 }
 
-impl Eq for File { }
+impl Eq for File {}
 
 impl std::hash::Hash for File {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -89,7 +89,12 @@ impl File {
         }
     }
 
-    pub fn write_index_entry(&self, page: &mut impl Write, base: impl AsRef<Path>, with_parent: bool) {
+    pub fn write_index_entry(
+        &self,
+        page: &mut impl Write,
+        base: impl AsRef<Path>,
+        with_parent: bool,
+    ) {
         let meta = self.meta.as_ref();
         let fname = self.path.file_name().unwrap().to_str().unwrap();
         let path = self.path.strip_prefix(base).unwrap().display();
