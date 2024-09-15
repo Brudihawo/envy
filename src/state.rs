@@ -21,7 +21,7 @@ macro_rules! serve_font {
         let mut headers = HeaderMap::new();
         if $identifier.ends_with($font_name) {
             let file_contents = include_bytes!(concat!(
-                "../vendor/mathjax/output/chtml/fonts/woff-v2/",
+                "../vendor/mathjax/es5/output/chtml/fonts/woff-v2/",
                 $font_name
             ));
             headers.insert(header::CONTENT_TYPE, $mtype.parse().unwrap());
@@ -240,7 +240,7 @@ impl Envy {
             return get_md(path).await;
         }
         if p == "/vendor/mathjax/tex-chtml.js" {
-            let file_contents = include_str!("../vendor/mathjax/tex-chtml.js");
+            let file_contents = include_str!("../vendor/mathjax/es5/tex-chtml.js");
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
             return Ok((headers, file_contents).into_response());
