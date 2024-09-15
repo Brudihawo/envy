@@ -37,8 +37,8 @@ enum Action {
         long_about = "create a new note in '<notes_root>/<location>/' with bibtex info in system clipboard"
     )]
     NewPaper {
-        #[arg(long, short, help="relative path for new-paper note location")]
-        location: String
+        #[arg(long, short, help = "relative path for new-paper note location")]
+        location: String,
     },
 }
 
@@ -60,9 +60,26 @@ pub fn main() {
             .build()
             .unwrap()
             .block_on(serve(&args.notes_root)),
-        Action::Citations => {
-        },
-        Action::NewPaper {location}=> todo!(),
+        Action::Citations => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let envy = Envy::build_database(&args.notes_root).await;
+                for entry in envy
+                    .notes
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(_loc, sub)| sub.iter())
+                    .flatten()
+                    .filter_map(|(_path, file)| file.meta.as_ref())
+                    .map(|f| &f.bibtex)
+                {
+                    println!("{}", entry)
+                }
+            }),
+        Action::NewPaper { location } => todo!(),
     }
 }
 //

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{de::Visitor, Deserialize};
 
 #[derive(Deserialize, Debug, Clone)]
@@ -15,6 +17,28 @@ pub enum EntryKind {
     Proceedings,
     Techreport,
     Unpublished,
+}
+
+impl std::fmt::Display for EntryKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use EntryKind::*;
+        let text = match self {
+            Article => "article",
+            Book => "book",
+            Booklet => "booklet",
+            Conference => "conference",
+            Inbook => "inbook",
+            Incollection => "incollection",
+            Inproceedings => "inproceedings",
+            Manual => "manual",
+            PhdThesis => "phdthesis",
+            Misc => "misc",
+            Proceedings => "proceedings",
+            Techreport => "techreport",
+            Unpublished => "unpublished",
+        };
+        write!(f, "{text}")
+    }
 }
 
 impl EntryKind {
@@ -48,6 +72,22 @@ pub struct BibtexEntry {
     pub author: String,
     pub year: String,
     pub title: String,
+    pub other: Option<HashMap<String, String>>,
+}
+
+impl std::fmt::Display for BibtexEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "@{}{{{},", self.kind, self.name)?;
+        writeln!(f, "  author={{{}}},", self.author)?;
+        writeln!(f, "  year={{{}}},", self.year)?;
+        writeln!(f, "  title={{{}}},", self.title)?;
+        if let Some(other) = &self.other {
+            for (k, v) in other {
+                writeln!(f, "  {k}={{{v}}},")?;
+            }
+        }
+        writeln!(f, "}}")
+    }
 }
 
 struct BibtexParser<'a> {
@@ -193,6 +233,7 @@ impl BibtexEntry {
         let mut author = None;
         let mut year = None;
         let mut title = None;
+        let mut other = HashMap::new();
         loop {
             parser.skip_whitespace();
             let key = parser.parse_key()?;
@@ -201,8 +242,9 @@ impl BibtexEntry {
                 "author" => author = Some(parser.parse_value()?),
                 "year" => year = Some(parser.parse_value()?),
                 "title" => title = Some(parser.parse_value()?),
-                _ => {
-                    let _ = parser.parse_value()?;
+                key => {
+                    let val = parser.parse_value()?;
+                    other.insert(key.to_string(), val);
                 }
             }
             parser.skip_whitespace();
@@ -214,6 +256,11 @@ impl BibtexEntry {
                         title: title.ok_or("No title field in bibtex entry")?,
                         author: author.ok_or("No author field in bibtex entry")?,
                         year: year.ok_or("No year field in bibtex entry")?,
+                        other: if other.is_empty() {
+                            None
+                        } else {
+                            Some(other)
+                        }
                     })
                 } // we've reached the end of the entry
                 None => {

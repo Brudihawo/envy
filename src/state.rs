@@ -32,7 +32,7 @@ macro_rules! serve_font {
 
 type NoteMap = HashMap<String, File>;
 pub struct Envy {
-    notes: Arc<Mutex<HashMap<String, NoteMap>>>,
+    pub notes: Arc<Mutex<HashMap<String, NoteMap>>>,
     root: Arc<PathBuf>,
 }
 
