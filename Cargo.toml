@@ -11,6 +11,7 @@ reload_css = []
 [dependencies]
 axum = "0.7.5"
 cfg-if = "1.0.0"
+clap = { version = "4.5.17", features = ["derive"] }
 itertools = "0.13.0"
 mime_guess = "2.0.4"
 notify = "6.1.1"

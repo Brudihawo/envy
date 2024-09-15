@@ -61,7 +61,7 @@ fn get_top_parent(path: &Path) -> String {
 }
 
 impl Envy {
-    pub async fn build_database(path: &str) -> Self {
+    pub async fn build_database(path: &impl AsRef<Path>) -> Self {
         use walkdir::WalkDir;
         let files = WalkDir::new(path)
             .into_iter()
