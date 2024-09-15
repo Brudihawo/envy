@@ -104,16 +104,16 @@ impl Envy {
 
         Envy {
             notes: Arc::new(Mutex::new(notes)),
-            root: Arc::new(path.as_ref().to_owned())
+            root: Arc::new(path.as_ref().to_owned()),
         }
     }
 
-    pub async fn get_md(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
+    pub async fn get_md(&self, path: impl AsRef<Path>) -> Result<Response<Body>, Response<Body>> {
         let mut headers = HeaderMap::new();
         // TODO: query file cache first
         headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
 
-        let str_path_ = self.root.join(path.to_string());
+        let str_path_ = self.root.join(path);
         let str_path = str_path_.to_str().unwrap();
 
         let file = file_or_err_page(&str_path).await?;
@@ -228,11 +228,11 @@ impl Envy {
         }
     }
 
-    async fn get_pdf(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
+    async fn get_pdf(&self, path: impl AsRef<Path>) -> Result<Response<Body>, Response<Body>> {
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, "application/pdf".parse().unwrap());
 
-        let str_path_ = self.root.join(path.to_string());
+        let str_path_ = self.root.join(path);
         let str_path = str_path_.to_str().unwrap();
 
         let mut file = file_or_err_page(&str_path).await?;
@@ -246,14 +246,14 @@ impl Envy {
     }
 
     pub async fn get_file(&self, path: Uri) -> Result<Response<Body>, Response<Body>> {
-        let p = path.path();
+        let p = path.path().strip_prefix("/").unwrap();
         // TODO: query file cache first
 
         if p.ends_with(".pdf") {
-            return self.get_pdf(path).await;
+            return self.get_pdf(p).await;
         }
         if p.ends_with(".md") {
-            return self.get_md(path).await;
+            return self.get_md(p).await;
         }
         if p == "/vendor/mathjax/tex-chtml.js" {
             let file_contents = include_str!("../vendor/mathjax/es5/tex-chtml.js");
