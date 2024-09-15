@@ -255,7 +255,8 @@ impl Envy {
         if p.ends_with(".md") {
             return self.get_md(p).await;
         }
-        if p == "/vendor/mathjax/tex-chtml.js" {
+
+        if path.path() == "/vendor/mathjax/tex-chtml.js" {
             let file_contents = include_str!("../vendor/mathjax/es5/tex-chtml.js");
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, "text/javascript".parse().unwrap());
