@@ -153,7 +153,7 @@ impl Envy {
 
         let res = file_scores
             .iter()
-            .sorted_by(|(_, sa), (_, sb)| sa.partial_cmp(sb).unwrap())
+            .sorted_by(|(_, sa), (_, sb)| sb.partial_cmp(sa).unwrap())
             .filter_map(|(file, score)| {
                 if *score > 0.0 {
                     let mut s = String::new();
@@ -194,7 +194,7 @@ impl Envy {
                         None
                     }
                 })
-                .sorted_by(|(sa, _), (sb, _)| sa.partial_cmp(sb).unwrap())
+                .sorted_by(|(sa, _), (sb, _)| sb.partial_cmp(sa).unwrap())
                 .collect(),
         )
     }
