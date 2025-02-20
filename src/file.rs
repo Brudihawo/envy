@@ -59,7 +59,7 @@ impl File {
                 .map_err(|err| {
                     // TODO: proper logging
                     eprintln!(
-                        "Invalid Metadata in {path}: '{err}'",
+                        "Invalid Metadata in {path}: '{err}' (read metadata: {meta})",
                         path = path.as_ref().display()
                     );
                     ()
