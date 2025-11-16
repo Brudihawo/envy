@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 pub struct Lexer<'a> {
     text: &'a str,
     cursor: usize,

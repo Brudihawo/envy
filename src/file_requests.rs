@@ -1,6 +1,6 @@
 use crate::file::PaperMeta;
 use axum::body::Body;
-use axum::http::{header, HeaderMap, StatusCode, Uri};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use cfg_if::cfg_if;
 use pulldown_cmark::{CowStr, Options, Parser};

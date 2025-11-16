@@ -3,8 +3,7 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
-use itertools::Itertools;
-use std::io::{self, BufWriter};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use envy::api::{query_fulltext, query_meta};

@@ -141,7 +141,7 @@ impl Envy {
             })
             .collect();
 
-        for (path, file) in notes.iter().map(|(_, h)| h.iter()).flatten() {
+        for (_, file) in notes.iter().map(|(_, h)| h.iter()).flatten() {
             let mut score = 0.0;
             for token in tokens.iter() {
                 let tf = *file.tf_map.get(*token).unwrap_or(&0) as f64 / file.num_words as f64;
