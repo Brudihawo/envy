@@ -33,7 +33,10 @@ enum Action {
         about = "Generate citations list",
         long_about = "Generate a list of all the bibtex citations present in the notes DB"
     )]
-    Citations,
+    Citations {
+        #[arg(long, short, help = "tag to find citations by")]
+        tag: Option<String>,
+    },
     #[command(
         about = "Create new note with attached paper",
         long_about = "create a new note in '<notes_root>/<location>/' with bibtex info in system clipboard"
@@ -122,7 +125,7 @@ pub fn main() {
             .build()
             .unwrap()
             .block_on(serve(&args.notes_root)),
-        Action::Citations => tokio::runtime::Builder::new_current_thread()
+        Action::Citations { tag } => tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
@@ -136,6 +139,15 @@ pub fn main() {
                     .map(|(_loc, sub)| sub.iter())
                     .flatten()
                     .filter_map(|(_path, file)| file.meta.as_ref())
+                    .filter(|meta| {
+                        let Some(tag) = tag.as_ref() else { return true };
+
+                        let Some(tags) = meta.tags.as_ref() else {
+                            return false;
+                        };
+
+                        tags.contains(&tag)
+                    })
                     .map(|f| &f.bibtex)
                 {
                     println!("{}", entry)
