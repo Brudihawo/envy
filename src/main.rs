@@ -1,7 +1,10 @@
 use axum::http::Uri;
 use axum::response::IntoResponse;
 use axum::{routing::get, Router};
+use chrono::Datelike;
 use clap::{Parser, Subcommand};
+use itertools::Itertools;
+use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 
 use envy::api::{query_fulltext, query_meta};
@@ -33,7 +36,7 @@ enum Action {
     )]
     Citations,
     #[command(
-        about = "Create new note",
+        about = "Create new note with attached paper",
         long_about = "create a new note in '<notes_root>/<location>/' with bibtex info in system clipboard"
     )]
     NewPaper {
@@ -41,6 +44,8 @@ enum Action {
               default_value_t=String::from("papers"))]
         location: String,
     },
+    #[command(about = "Create new daily note")]
+    Today,
 }
 
 pub fn new_paper(root: &str, location: &str) -> Result<PathBuf, String> {
@@ -95,6 +100,20 @@ struct Args {
     cmd: Action,
 }
 
+pub fn open_in_editor(path: impl AsRef<Path>) {
+    let editor = std::env::vars()
+        .find(|(k, _)| k == "EDITOR")
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_else(|| {
+            eprintln!("Not opening file because $EDITOR is not set.");
+            std::process::exit(1);
+        });
+    let _ = std::process::Command::new(editor)
+        .args(path.as_ref().to_str())
+        .status()
+        .expect("Could not start editor");
+}
+
 pub fn main() {
     let mut args = Args::parse();
     args.notes_root = shellexpand::tilde(&args.notes_root).to_string();
@@ -130,19 +149,151 @@ pub fn main() {
                     std::process::exit(1);
                 })
                 .unwrap();
-            let editor = std::env::vars()
-                .find(|(k, _)| k == "EDITOR")
-                .map(|(_, v)| v.to_string())
-                .unwrap_or_else(|| {
-                    eprintln!("Not opening file because $EDITOR is not set.");
-                    std::process::exit(1);
-                });
-            let _ = std::process::Command::new(editor)
-                .args(created_file.to_str())
-                .status()
-                .expect("Could not start editor");
+            let _ = std::env::set_current_dir(&args.notes_root)
+                .map_err(|err| eprintln!("Could not change working directory: {err}"));
+            open_in_editor(created_file);
+        }
+        Action::Today => {
+            let (new_note, daily_path, datetime) = prep_today(&args.notes_root);
+            let _ = std::env::set_current_dir(&args.notes_root)
+                .map_err(|err| eprintln!("Could not change working directory: {err}"));
+            if !new_note.exists() {
+                new_today(new_note.clone(), daily_path, &args.notes_root, datetime)
+                    .map_err(|err| {
+                        eprintln!("Could not create new daily note: {err}");
+                        std::process::exit(1);
+                    })
+                    .unwrap();
+            }
+            open_in_editor(&new_note);
         }
     }
+}
+
+fn last_entry(daily_path: impl AsRef<Path>, root_path: impl AsRef<Path>) -> Option<String> {
+    let mut newest = None;
+    let mut newest_path = None;
+    for f in std::fs::read_dir(daily_path).ok()?.filter_map(|f| f.ok()) {
+        let p = f.path();
+        if p.extension().map(|x| x.to_str().expect("is utf8") == "md") != Some(true) {
+            continue;
+        }
+
+        let Some(f) = p.file_name().expect("file does not end in '..'").to_str() else {
+            continue;
+        };
+
+        let Ok(date) = chrono::NaiveDate::parse_from_str(f, "%y-%m-%d.md") else {
+            continue;
+        };
+
+        if let Some(d) = newest {
+            if d < date {
+                newest = Some(date);
+                newest_path = Some(p);
+            }
+        } else {
+            newest = Some(date);
+            newest_path = Some(p);
+        }
+    }
+
+    newest_path.map(|x| {
+        x.strip_prefix(root_path)
+            .expect("is child of daily_path")
+            .to_str()
+            .expect("is utf8")
+            .to_owned()
+    })
+}
+
+fn write_cal(
+    file: &mut impl std::io::Write,
+    datetime: chrono::DateTime<chrono::Local>,
+) -> io::Result<()> {
+    let date = datetime.date_naive();
+    let day_no = date.day0() + 1;
+
+    let month_begin = date.with_day(1).expect("date in range");
+    let w = month_begin.weekday().num_days_from_monday() as u8;
+
+    const WEEKDAYS_HEADER: &'static str = " Mon  Tue  Wed  Thu  Fri  Sat  Sun";
+    let mon_yr = date.format("%B %Y").to_string();
+    let begin = (WEEKDAYS_HEADER.len() - mon_yr.len()) / 2;
+    writeln!(file, "```")?;
+    writeln!(file, "{}{mon_yr}", " ".repeat(begin))?;
+    writeln!(file, "{}", WEEKDAYS_HEADER)?;
+    for _ in 0..w {
+        write!(file, "     ")?;
+    }
+    for i in 1..date.num_days_in_month() + 1 {
+        if i == day_no as u8 {
+            write!(file, " [{i:2}] ")?;
+        } else {
+            write!(file, "{i:>4} ")?;
+        }
+        if (i + w) % 7 == 0 {
+            write!(file, "\n")?;
+        }
+    }
+    writeln!(file, "```")?;
+    Ok(())
+}
+
+fn prep_today(root: &str) -> (PathBuf, PathBuf, chrono::DateTime<chrono::Local>) {
+    let datetime = chrono::Local::now();
+    let fname = format!("{}.md", datetime.format("%y-%m-%d"));
+
+    let daily_path = Path::new(root).join("daily");
+    let path = daily_path.join(fname);
+
+    (path, daily_path, datetime)
+}
+
+fn new_today(
+    new_file_path: PathBuf,
+    daily_path: PathBuf,
+    root_path: impl AsRef<Path>,
+    datetime: chrono::DateTime<chrono::Local>,
+) -> Result<(), String> {
+    use std::io::{BufWriter, Write};
+
+    let l = last_entry(daily_path, root_path);
+
+    let mut file = std::fs::File::create_new(&new_file_path)
+        .map(|f| BufWriter::new(f))
+        .map_err(|err| {
+            format!(
+                "Failed to create file '{path}': {err}",
+                path = new_file_path.display()
+            )
+        })?;
+
+    write_cal(&mut file, datetime).map_err(|err| {
+        format!(
+            "Could not write to file {p}: {err}",
+            p = new_file_path.display()
+        )
+    })?;
+
+    let _ = write!(
+        file,
+        r#"#{n}
+
+{l}
+[next](<empty>)
+"#,
+        n = datetime.format("%d.%m.%y"),
+        l = l.map(|x| format!("[last]({x})")).unwrap_or("".to_string())
+    )
+    .map_err(|err| {
+        format!(
+            "could not write to file: '{path}': {err}",
+            path = new_file_path.display()
+        )
+    })?;
+
+    Ok(())
 }
 //
 // #[tokio::main]
