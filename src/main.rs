@@ -239,7 +239,7 @@ fn write_cal(
     }
     for i in 1..date.num_days_in_month() + 1 {
         if i == day_no as u8 {
-            write!(file, " [{i:2}] ")?;
+            write!(file, " [{i:2}]")?;
         } else {
             write!(file, "{i:>4} ")?;
         }
@@ -289,7 +289,7 @@ fn new_today(
 
     let _ = write!(
         file,
-        r#"#{n}
+        r#"# {n}
 
 {l}
 [next](<empty>)
