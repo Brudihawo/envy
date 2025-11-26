@@ -3,7 +3,8 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
-use std::io;
+use std::fs::OpenOptions;
+use std::io::{self, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use envy::api::{query_fulltext, query_meta};
@@ -269,7 +270,57 @@ fn new_today(
 ) -> Result<(), String> {
     use std::io::{BufWriter, Write};
 
-    let l = last_entry(daily_path, root_path);
+    let l = last_entry(daily_path, &root_path);
+
+    if let Some(ref l) = l {
+        let l = root_path.as_ref().join(l);
+        let mut note_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&l)
+            .map_err(|err| {
+                format!(
+                    "Could not update last note '{l}'. File could not be read: {err}.",
+                    l = l.display()
+                )
+            })?;
+        let mut note_contents = String::new();
+        note_file
+            .read_to_string(&mut note_contents)
+            .map_err(|err| {
+                format!(
+                    "Could not update last note '{l}'. File could not be read: {err}.",
+                    l = l.display()
+                )
+            })?;
+        let relpath = new_file_path
+            .strip_prefix(&root_path)
+            .expect("new file is in root")
+            .to_str()
+            .expect("is utf8");
+
+        note_file.seek(std::io::SeekFrom::Start(0)).map_err(|err| {
+            format!(
+                "Could not update last note '{l}'. Failed to seek to beginning of file: {err}",
+                l = l.display()
+            )
+        })?;
+        let new_note = note_contents.replace("[next](<empty>)", &format!("[next]({relpath})"));
+        // only overwrite when necessary
+        if new_note != note_contents {
+            let n = note_file.write(new_note.as_bytes()).map_err(|err| {
+                format!(
+                    "Could not update last note '{l}': Failed to write file contents: {err}",
+                    l = l.display()
+                )
+            })?;
+            assert_eq!(
+                new_note.as_bytes().len(),
+                n,
+                "Number of bytes written must be equal to length of new file contents"
+            );
+        }
+    }
 
     let mut file = std::fs::File::create_new(&new_file_path)
         .map(|f| BufWriter::new(f))
