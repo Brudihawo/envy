@@ -78,15 +78,15 @@ pub struct BibtexEntry {
 impl std::fmt::Display for BibtexEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "@{}{{{},", self.kind, self.name)?;
-        writeln!(f, "  author={{{}}},", self.author)?;
-        writeln!(f, "  year={{{}}},", self.year)?;
-        writeln!(f, "  title={{{}}},", self.title)?;
+        writeln!(f, "        author={{{}}},", self.author)?;
+        writeln!(f, "        year={{{}}},", self.year)?;
+        writeln!(f, "        title={{{}}},", self.title)?;
         if let Some(other) = &self.other {
             for (k, v) in other {
-                writeln!(f, "  {k}={{{v}}},")?;
+                writeln!(f, "        {k}={{{v}}},")?;
             }
         }
-        writeln!(f, "}}")
+        write!(f, "}}")
     }
 }
 
