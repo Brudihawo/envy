@@ -47,7 +47,26 @@ fn load_pdf_text_to_tf_map(
         .map_err(|err| format!("Could not open file '{p}': {err}", p = pdf_path.display()))?;
 
     let mut text = String::new();
-    for p in doc.pages().unwrap().skip(1) {
+    let n = doc.page_count().map_err(|err| {
+        format!(
+            "Could not get number of pages in pdf '{p}': {err}",
+            p = pdf_path.display()
+        )
+    })?;
+    if n > 100 {
+        eprintln!(
+            "Skipping file '{p}' during full-text indexing. Too long ({n} pages).",
+            p = pdf_path.display()
+        );
+
+        return Ok(());
+    };
+    for p in doc.pages().map_err(|err| {
+        format!(
+            "Could not get pages for file '{p}': {err}",
+            p = pdf_path.display()
+        )
+    })? {
         match p {
             Ok(p) => text.write_str(&p.to_text().unwrap()).unwrap(),
             Err(err) => println!("ERROR: Could not load page: {err}"),

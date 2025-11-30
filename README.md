@@ -7,8 +7,6 @@ While there is no documentation on how to use this project, you probably shouldn
 
 ## Setup
 
-Clone this repo, `cd` into it, create a virtual environment and install the dependencies into it.
-
 ```commandline
 $ git clone https://github.com/Brudihawo/envy.git
 $ cd envy
