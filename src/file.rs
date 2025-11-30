@@ -39,6 +39,24 @@ impl std::hash::Hash for File {
     }
 }
 
+fn load_pdf_text_to_tf_map(
+    pdf_path: &Path,
+    tf_map: &mut HashMap<String, usize>,
+) -> Result<(), String> {
+    let doc = mupdf::Document::open(pdf_path)
+        .map_err(|err| format!("Could not open file '{p}': {err}", p = pdf_path.display()))?;
+
+    let mut text = String::new();
+    for p in doc.pages().unwrap().skip(1) {
+        match p {
+            Ok(p) => text.write_str(&p.to_text().unwrap()).unwrap(),
+            Err(err) => println!("ERROR: Could not load page: {err}"),
+        }
+    }
+    Lexer::new(&text).token_frequencies_into_existing_map(tf_map);
+    Ok(())
+}
+
 impl File {
     pub async fn new(path: impl AsRef<Path>) -> Self {
         let file = tokio::fs::File::open(&path).await.expect("file exists");
@@ -70,13 +88,19 @@ impl File {
             None
         };
 
-        let mut tf_map = HashMap::new();
         let f = tokio::fs::read_to_string(&path).await.unwrap();
-        for token in Lexer::new(&f) {
-            tf_map
-                .entry(token.to_lowercase())
-                .and_modify(|i| *i += 1)
-                .or_insert(1);
+        let mut tf_map = HashMap::new();
+        Lexer::new(&f).token_frequencies_into_existing_map(&mut tf_map);
+        if let Some(ref m) = meta {
+            let parent = path.as_ref().parent().expect("note file has parent");
+            let pdf_path = parent.join(&m.pdf);
+            if let Err(err) = load_pdf_text_to_tf_map(&pdf_path, &mut tf_map) {
+                eprintln!(
+                    "ERROR: Could not get data for pdf (at '{pdf_path}') of file '{p}'. {err}",
+                    pdf_path = pdf_path.display(),
+                    p = path.as_ref().display()
+                )
+            }
         }
 
         Self {

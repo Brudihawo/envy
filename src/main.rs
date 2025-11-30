@@ -3,6 +3,10 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
+use envy::file_tokenizer::{self, Lexer};
+use itertools::Itertools;
+use mupdf::TextPageOptions;
+use std::fmt::Write;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Seek};
 use std::path::{Path, PathBuf};
@@ -117,7 +121,7 @@ pub fn open_in_editor(path: impl AsRef<Path>) {
         .expect("Could not start editor");
 }
 
-pub fn main() {
+fn main() {
     let mut args = Args::parse();
     args.notes_root = shellexpand::tilde(&args.notes_root).to_string();
     match args.cmd {

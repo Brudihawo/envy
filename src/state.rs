@@ -122,7 +122,7 @@ impl Envy {
 
     pub fn query_fulltext(&self, text_query: &str) -> Option<Vec<(f64, String)>> {
         let mut file_scores = HashMap::new();
-        let tokens = Lexer::new(text_query).collect_vec();
+        let tokens = Lexer::new(text_query).filter(|x| x.len() > 0).collect_vec();
         let notes = self.notes.lock().unwrap();
         let num_docs = notes.iter().count();
 
@@ -160,6 +160,7 @@ impl Envy {
             .sorted_by(|(_, sa), (_, sb)| sb.partial_cmp(sa).unwrap())
             .filter_map(|(file, score)| {
                 if *score > 0.0 {
+                    println!("{file} {score}", file = file.path.display());
                     let mut s = String::new();
                     file.write_index_entry(&mut s, self.root.as_ref(), true);
                     Some((*score, s))
@@ -204,11 +205,47 @@ impl Envy {
     }
 
     pub async fn update_file(&mut self, path: &Path) {
+        let path_string = path.to_str().expect("is utf8").to_string();
+
         let parent = get_top_parent(path, self.root.as_ref());
-        if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&parent) {
-            if let Some(n) = sub_notes.get_mut(path.to_str().expect("path is utf8")) {
-                *n = File::new(path).await
+
+        let mut notes = self.notes.lock().expect("not poisoned");
+        let sub_notes = notes.entry(parent.clone()).or_insert(HashMap::new());
+
+        match path
+            .extension()
+            .map(|x| x.to_str().expect("filename is utf8"))
+        {
+            Some("pdf") => {
+                let Some((file, _)) = sub_notes.iter().find(|(_path, ref name)| {
+                    name.meta
+                        .as_ref()
+                        .map(|x| x.pdf.to_str().expect("is utf8") == path_string)
+                        .unwrap_or(false)
+                }) else {
+                    println!(
+                        "File {} updated, but is not associated with any note.",
+                        path.display()
+                    );
+                    return;
+                };
+                // make borrow checker shut up :)
+                let file = file.clone();
+
+                {
+                    let n = sub_notes.get_mut(&file).expect("is in map");
+                    *n = File::new(path).await;
+                }
             }
+            Some("md") => {
+                if let Some(n) = sub_notes.get_mut(path.to_str().expect("path is utf8")) {
+                    *n = File::new(path).await;
+                } else {
+                    sub_notes.insert(path_string, File::new(path).await);
+                }
+            }
+            Some(_) => println!("File {} updated. No action required", path.display()),
+            None => return,
         }
     }
 
@@ -229,6 +266,7 @@ impl Envy {
                 File::new(to).await,
             );
         } else {
+            // ???
         }
     }
 

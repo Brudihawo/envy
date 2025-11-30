@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub struct Lexer<'a> {
     text: &'a str,
     cursor: usize,
@@ -6,6 +8,25 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     pub fn new(text: &'a str) -> Self {
         Self { text, cursor: 0 }
+    }
+
+    pub fn token_frequencies(self) -> HashMap<String, usize> {
+        let mut tokens = HashMap::new();
+        for token in self {
+            tokens
+                .entry(token.to_lowercase())
+                .and_modify(|i| *i += 1)
+                .or_insert(1);
+        }
+        tokens
+    }
+
+    pub fn token_frequencies_into_existing_map(self, map: &mut HashMap<String, usize>) {
+        for token in self {
+            map.entry(token.to_lowercase())
+                .and_modify(|i| *i += 1)
+                .or_insert(1);
+        }
     }
 
     fn next_token(&mut self) -> Option<&'a str> {
@@ -25,7 +46,7 @@ impl<'a> Lexer<'a> {
 
                 word_start = Some(index);
             } else {
-                if c.is_alphanumeric() {
+                if !c.is_whitespace() {
                     continue;
                 }
 
