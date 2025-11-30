@@ -12,6 +12,6 @@ Clone this repo, `cd` into it, create a virtual environment and install the depe
 ```commandline
 $ git clone https://github.com/Brudihawo/envy.git
 $ cd envy
-$ ./init.sh
+$ git submodule update --recursive --init
 $ cargo run
 ```
