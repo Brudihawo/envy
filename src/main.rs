@@ -252,7 +252,7 @@ fn write_cal(
             write!(file, "\n")?;
         }
     }
-    writeln!(file, "```")?;
+    writeln!(file, "```\n")?;
     Ok(())
 }
 
