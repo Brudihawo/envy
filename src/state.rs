@@ -63,7 +63,7 @@ fn get_top_parent(path: &Path, root: &impl AsRef<Path>) -> String {
 }
 
 impl Envy {
-    pub async fn build_database(path: &impl AsRef<Path>) -> Self {
+    pub async fn build_database(path: &impl AsRef<Path>, scan_contents: bool) -> Self {
         use walkdir::WalkDir;
         let files = WalkDir::new(path)
             .into_iter()
@@ -77,7 +77,9 @@ impl Envy {
                     false
                 }
             })
-            .map(|e| async move { File::new(e.path().to_string_lossy().to_string()).await });
+            .map(|e| async move {
+                File::new(e.path().to_string_lossy().to_string(), scan_contents).await
+            });
 
         let mut notes: HashMap<String, NoteMap> = HashMap::new();
         for file in files {
@@ -234,14 +236,14 @@ impl Envy {
 
                 {
                     let n = sub_notes.get_mut(&file).expect("is in map");
-                    *n = File::new(path).await;
+                    *n = File::new(path, true).await;
                 }
             }
             Some("md") => {
                 if let Some(n) = sub_notes.get_mut(path.to_str().expect("path is utf8")) {
-                    *n = File::new(path).await;
+                    *n = File::new(path, true).await;
                 } else {
-                    sub_notes.insert(path_string, File::new(path).await);
+                    sub_notes.insert(path_string, File::new(path, true).await);
                 }
             }
             Some(_) => println!("File {} updated. No action required", path.display()),
@@ -263,7 +265,7 @@ impl Envy {
         if let Some(sub_notes) = self.notes.lock().unwrap().get_mut(&to_parent) {
             sub_notes.insert(
                 to.to_str().expect("path is utf8").to_string(),
-                File::new(to).await,
+                File::new(to, true).await,
             );
         } else {
             // ???

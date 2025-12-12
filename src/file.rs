@@ -77,7 +77,7 @@ fn load_pdf_text_to_tf_map(
 }
 
 impl File {
-    pub async fn new(path: impl AsRef<Path>) -> Self {
+    pub async fn new(path: impl AsRef<Path>, scan_contents: bool) -> Self {
         let file = tokio::fs::File::open(&path).await.expect("file exists");
         let metadata = file.metadata().await.expect("file has readable metadata");
 
@@ -113,12 +113,14 @@ impl File {
         if let Some(ref m) = meta {
             let parent = path.as_ref().parent().expect("note file has parent");
             let pdf_path = parent.join(&m.pdf);
-            if let Err(err) = load_pdf_text_to_tf_map(&pdf_path, &mut tf_map) {
-                eprintln!(
-                    "ERROR: Could not get data for pdf (at '{pdf_path}') of file '{p}'. {err}",
-                    pdf_path = pdf_path.display(),
-                    p = path.as_ref().display()
-                )
+            if scan_contents {
+                if let Err(err) = load_pdf_text_to_tf_map(&pdf_path, &mut tf_map) {
+                    eprintln!(
+                        "ERROR: Could not get data for pdf (at '{pdf_path}') of file '{p}'. {err}",
+                        pdf_path = pdf_path.display(),
+                        p = path.as_ref().display()
+                    )
+                }
             }
         }
 

@@ -135,7 +135,7 @@ fn main() {
             .build()
             .unwrap()
             .block_on(async {
-                let envy = Envy::build_database(&args.notes_root).await;
+                let envy = Envy::build_database(&args.notes_root, false).await;
                 for entry in envy
                     .notes
                     .lock()
@@ -366,7 +366,7 @@ fn new_today(
 async fn serve(loc: &impl AsRef<Path>) {
     tracing_subscriber::fmt::init();
 
-    let envy = Envy::build_database(loc).await;
+    let envy = Envy::build_database(loc, true).await;
 
     let nvy_watch = envy.clone();
     let mut watcher = recommended_watcher(move |res| watch(res, nvy_watch.clone()))
