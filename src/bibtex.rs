@@ -52,7 +52,7 @@ impl EntryKind {
             b"incollection" => Ok(Self::Incollection),
             b"inproceedings" => Ok(Self::Inproceedings),
             b"manual" => Ok(Self::Manual),
-            b"phdThesis" => Ok(Self::PhdThesis),
+            b"phdthesis" => Ok(Self::PhdThesis),
             b"misc" => Ok(Self::Misc),
             b"proceedings" => Ok(Self::Proceedings),
             b"techreport" => Ok(Self::Techreport),
